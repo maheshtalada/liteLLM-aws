@@ -1,0 +1,93 @@
+# LiteLLM config — Bedrock (via instance role) + external providers.
+#
+# Bedrock model IDs vary by region. From ap-south-1, list what you can call with:
+#   aws bedrock list-inference-profiles --region ap-south-1 \
+#     --query 'inferenceProfileSummaries[].inferenceProfileId'
+#   aws bedrock list-foundation-models --region ap-south-1 --by-inference-type ON_DEMAND \
+#     --query 'modelSummaries[].modelId'
+# Use the inference profile ID (e.g. "apac.…") where one exists.
+# Replace every <…> placeholder; delete entries you don't need.
+
+model_list:
+  # ===================== AWS model providers (Bedrock) =====================
+  # No api_key: credentials come from the EC2 instance role.
+  - model_name: bedrock-claude-sonnet
+    litellm_params:
+      model: bedrock/<claude-sonnet-inference-profile-id>
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-claude-haiku
+    litellm_params:
+      model: bedrock/<claude-haiku-inference-profile-id>
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: nova-pro
+    litellm_params:
+      model: bedrock/apac.amazon.nova-pro-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: nova-lite
+    litellm_params:
+      model: bedrock/apac.amazon.nova-lite-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-llama
+    litellm_params:
+      model: bedrock/<llama-model-or-profile-id>
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # ======================== External model providers =======================
+  # Keys are injected from Secrets Manager (<name>/<PROVIDER>_API_KEY).
+  - model_name: claude-sonnet-5-5          # Anthropic direct (real ID so Claude Code works as-is)
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: gpt-4o                     # OpenAI direct
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: azure-gpt-4o               # Azure OpenAI
+    litellm_params:
+      model: azure/<your-azure-deployment-name>
+      api_base: os.environ/AZURE_API_BASE
+      api_key: os.environ/AZURE_API_KEY
+      api_version: os.environ/AZURE_API_VERSION
+
+  - model_name: gemini-flash               # Google AI Studio key (use vertex_ai/ for Vertex)
+    litellm_params:
+      model: gemini/gemini-flash-latest
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: groq-llama-70b             # Groq
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+
+  - model_name: cohere-command             # Cohere
+    litellm_params:
+      model: cohere/<command-model-id>
+      api_key: os.environ/COHERE_API_KEY
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120
+  redis_host: os.environ/REDIS_HOST
+  redis_port: os.environ/REDIS_PORT
+  # Fail over between AWS-hosted and external models
+  fallbacks:
+    - bedrock-claude-sonnet: ["claude-sonnet-5-5"]
+    - claude-sonnet-5-5: ["bedrock-claude-sonnet"]
+    - gpt-4o: ["azure-gpt-4o"]
+    - groq-llama-70b: ["bedrock-llama"]
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 120
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  proxy_batch_write_at: 60

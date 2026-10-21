@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Runs on every boot (systemd) and on every ./reload.sh:
+#   1. sync compose + config from S3
+#   2. render /opt/litellm/.env from Secrets Manager (root-only)
+#   3. (re)start the stack
+set -euo pipefail
+
+source /etc/litellm.conf          # BUCKET, REGION
+APP=/opt/litellm
+mkdir -p "$APP"
+
+# Refresh the launcher itself, then compose/config bundle.
+aws s3 cp "s3://$BUCKET/bin/litellm-up" /usr/local/bin/litellm-up --region "$REGION" --only-show-errors
+aws s3 sync "s3://$BUCKET/app/" "$APP/" --region "$REGION" --delete --exclude ".env*" --only-show-errors
+
+# shellcheck disable=SC1091
+source "$APP/bootstrap.env"       # NAME, SECRET_KEYS, LITELLM_TAG, AWS_REGION_NAME, ...
+
+umask 077
+TMP="$APP/.env.tmp"
+: > "$TMP"
+for KEY in $SECRET_KEYS; do
+  VALUE=$(aws secretsmanager get-secret-value --region "$REGION" \
+            --secret-id "$NAME/$KEY" --query SecretString --output text)
+  printf '%s=%s\n' "$KEY" "$VALUE" >> "$TMP"
+done
+{
+  printf 'LITELLM_TAG=%s\n'       "$LITELLM_TAG"
+  printf 'AWS_REGION_NAME=%s\n'   "$AWS_REGION_NAME"
+  printf 'AZURE_API_BASE=%s\n'    "$AZURE_API_BASE"
+  printf 'AZURE_API_VERSION=%s\n' "$AZURE_API_VERSION"
+  printf 'LOG_GROUP=%s\n'         "$LOG_GROUP"
+  printf 'LOG_REGION=%s\n'        "$LOG_REGION"
+} >> "$TMP"
+mv "$TMP" "$APP/.env"
+chmod 600 "$APP/.env"
+
+cd "$APP"
+docker compose pull --quiet
+docker compose up -d --remove-orphans
+# config.yaml is bind-mounted; recreate LiteLLM so config and secret changes take effect.
+docker compose up -d --no-deps --force-recreate litellm
+
+echo "LiteLLM $LITELLM_TAG started"

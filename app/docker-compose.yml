@@ -1,0 +1,55 @@
+# Runs on the EC2 host from /opt/litellm. Variables come from /opt/litellm/.env,
+# which litellm-up renders from Secrets Manager at every start.
+services:
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:${LITELLM_TAG}
+    container_name: litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD}@db:5432/litellm
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      STORE_MODEL_IN_DB: "True"
+      # Bedrock auth = EC2 instance role via IMDSv2 (no keys)
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: ${LOG_GROUP}
+        awslogs-region: ${LOG_REGION}
+        awslogs-stream: litellm
+
+  db:
+    image: postgres:16
+    container_name: litellm-db
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: litellm-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:

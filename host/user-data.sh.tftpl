@@ -1,0 +1,44 @@
+#!/bin/bash
+# First-boot bootstrap (Amazon Linux 2023). Installs Docker + Compose, then hands
+# over to /usr/local/bin/litellm-up, which runs on every boot via systemd.
+set -euxo pipefail
+
+cat > /etc/litellm.conf <<EOF
+BUCKET=${bucket}
+REGION=${region}
+EOF
+chmod 644 /etc/litellm.conf
+
+dnf install -y docker jq
+systemctl enable --now docker
+
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+
+source /etc/litellm.conf
+aws s3 cp "s3://$BUCKET/bin/litellm-up" /usr/local/bin/litellm-up --region "$REGION"
+chmod 755 /usr/local/bin/litellm-up
+
+cat > /etc/systemd/system/litellm.service <<'EOF'
+[Unit]
+Description=LiteLLM gateway (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/litellm-up
+ExecStop=/usr/bin/docker compose --project-directory /opt/litellm down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now litellm.service

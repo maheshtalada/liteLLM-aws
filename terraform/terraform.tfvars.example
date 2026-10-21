@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars and edit.
+
+name   = "litellm"
+region = "ap-south-1"
+
+# Exact LiteLLM release tag (v1.83.0 or later) from https://github.com/BerriAI/litellm/releases
+litellm_tag = "<pinned-release-tag>"
+
+# Who can reach the gateway (office / VPN egress). Avoid 0.0.0.0/0.
+allowed_cidrs = ["203.0.113.0/24"]
+
+# Set to put an HTTPS ALB in front (recommended before sharing with the team).
+acm_certificate_arn = ""
+
+# Leave empty to use the default VPC. For a private subnet with NAT, set associate_public_ip = false.
+vpc_id              = ""
+subnet_id           = ""
+associate_public_ip = true
+
+instance_type = "t3.large"
+
+# Bedrock region (empty = same as region). APAC cross-region profiles work from ap-south-1.
+bedrock_region = ""
+
+azure_api_base    = "https://<your-resource>.openai.azure.com/"
+azure_api_version = "2024-10-21"
+
+# Only list providers you'll use — each becomes a secret you fill with set-secret.sh.
+provider_secret_names = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "COHERE_API_KEY"]
+
+tags = {
+  Owner = "platform-team"
+}
