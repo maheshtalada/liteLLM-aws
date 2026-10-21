@@ -5,7 +5,8 @@ set -euo pipefail
 
 KEY="${1:?usage: ./set-secret.sh <SECRET_NAME>  e.g. OPENAI_API_KEY}"
 NAME="${NAME:-litellm}"
-AWS_REGION="${AWS_REGION:-ap-south-1}"
+AWS_REGION="${AWS_REGION:-$(aws configure get region || true)}"
+AWS_REGION="${AWS_REGION:?set AWS_REGION or run: aws configure set region <region>}"
 
 read -r -s -p "Value for ${NAME}/${KEY}: " VALUE
 echo

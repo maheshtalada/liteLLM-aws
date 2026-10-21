@@ -1,74 +1,103 @@
-# LiteLLM config — Bedrock (via instance role) + external providers.
+# LiteLLM config — free-tier models only, grouped into three tiers.
 #
-# Bedrock model IDs vary by region. From ap-south-1, list what you can call with:
-#   aws bedrock list-inference-profiles --region ap-south-1 \
-#     --query 'inferenceProfileSummaries[].inferenceProfileId'
-#   aws bedrock list-foundation-models --region ap-south-1 --by-inference-type ON_DEMAND \
-#     --query 'modelSummaries[].modelId'
-# Use the inference profile ID (e.g. "apac.…") where one exists.
-# Replace every <…> placeholder; delete entries you don't need.
+# Clients call one of three model names; LiteLLM load-balances across every deployment that
+# shares the name, so each provider's free rate limit is spread out:
+#   lite     fast, small models — classification, extraction, short answers
+#   base     general-purpose chat and writing (default choice)
+#   complex  large / reasoning / coding models — hard problems, long documents
+#
+# Keys come from Secrets Manager (litellm/PROVIDER_API_KEY), set with ./set-secret.sh.
+# Free tiers are rate-limited and may use prompts to improve provider models — don't send
+# confidential data. Free model lists change often; re-check before relying on one:
+#   Gemini     https://ai.google.dev/gemini-api/docs/pricing      (Free Tier column)
+#   Groq       https://console.groq.com/docs/rate-limits          (free plan)
+#   OpenRouter https://openrouter.ai/models?max_price=0           (":free" IDs)
+#   Z.AI (GLM) https://docs.z.ai/guides/overview/pricing           (Flash models)
+#   Cohere     https://docs.cohere.com/docs/rate-limits            (trial: 1,000 calls/month)
+# Paid models (Bedrock, Anthropic, OpenAI, Azure) were removed for now — see git history.
 
 model_list:
-  # ===================== AWS model providers (Bedrock) =====================
-  # No api_key: credentials come from the EC2 instance role.
-  - model_name: bedrock-claude-sonnet
+  # ================================ lite ==================================
+  - model_name: lite
     litellm_params:
-      model: bedrock/<claude-sonnet-inference-profile-id>
-      aws_region_name: os.environ/AWS_REGION_NAME
-
-  - model_name: bedrock-claude-haiku
-    litellm_params:
-      model: bedrock/<claude-haiku-inference-profile-id>
-      aws_region_name: os.environ/AWS_REGION_NAME
-
-  - model_name: nova-pro
-    litellm_params:
-      model: bedrock/apac.amazon.nova-pro-v1:0
-      aws_region_name: os.environ/AWS_REGION_NAME
-
-  - model_name: nova-lite
-    litellm_params:
-      model: bedrock/apac.amazon.nova-lite-v1:0
-      aws_region_name: os.environ/AWS_REGION_NAME
-
-  - model_name: bedrock-llama
-    litellm_params:
-      model: bedrock/<llama-model-or-profile-id>
-      aws_region_name: os.environ/AWS_REGION_NAME
-
-  # ======================== External model providers =======================
-  # Keys are injected from Secrets Manager (<name>/<PROVIDER>_API_KEY).
-  - model_name: claude-sonnet-5-5          # Anthropic direct (real ID so Claude Code works as-is)
-    litellm_params:
-      model: anthropic/claude-sonnet-5-5
-      api_key: os.environ/ANTHROPIC_API_KEY
-
-  - model_name: gpt-4o                     # OpenAI direct
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
-
-  - model_name: azure-gpt-4o               # Azure OpenAI
-    litellm_params:
-      model: azure/<your-azure-deployment-name>
-      api_base: os.environ/AZURE_API_BASE
-      api_key: os.environ/AZURE_API_KEY
-      api_version: os.environ/AZURE_API_VERSION
-
-  - model_name: gemini-flash               # Google AI Studio key (use vertex_ai/ for Vertex)
-    litellm_params:
-      model: gemini/gemini-flash-latest
+      model: gemini/gemini-3.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
 
-  - model_name: groq-llama-70b             # Groq
+  - model_name: lite
     litellm_params:
-      model: groq/llama-3.3-70b-versatile
+      model: groq/openai/gpt-oss-20b
       api_key: os.environ/GROQ_API_KEY
+      rpm: 30
 
-  - model_name: cohere-command             # Cohere
+  - model_name: lite
     litellm_params:
-      model: cohere/<command-model-id>
+      model: zai/glm-4.5-flash                         # Zhipu (China)
+      api_key: os.environ/ZAI_API_KEY
+
+  - model_name: lite
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3.5-lightning:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ================================ base ==================================
+  - model_name: base
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: base
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 30
+
+  - model_name: base
+    litellm_params:
+      model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 30
+
+  - model_name: base
+    litellm_params:
+      model: zai/glm-4.7-flash                         # Zhipu (China)
+      api_key: os.environ/ZAI_API_KEY
+
+  - model_name: base
+    litellm_params:
+      model: openrouter/minimax/minimax-m3.1-flash:free  # MiniMax (China)
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: base
+    litellm_params:
+      model: openrouter/google/gemma-4-31b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # =============================== complex ================================
+  - model_name: complex
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: complex
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: complex
+    litellm_params:
+      model: openrouter/thinkingmachines/inkling:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: complex
+    litellm_params:
+      model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: complex
+    litellm_params:
+      model: cohere/command-a-03-2025                  # trial key: 1,000 calls/month
       api_key: os.environ/COHERE_API_KEY
+      rpm: 20
 
 router_settings:
   routing_strategy: simple-shuffle
@@ -76,12 +105,13 @@ router_settings:
   timeout: 120
   redis_host: os.environ/REDIS_HOST
   redis_port: os.environ/REDIS_PORT
-  # Fail over between AWS-hosted and external models
+  # Free deployments hit rate limits often: cool a failing one down, then fall back across tiers
+  allowed_fails: 2
+  cooldown_time: 60
   fallbacks:
-    - bedrock-claude-sonnet: ["claude-sonnet-5-5"]
-    - claude-sonnet-5-5: ["bedrock-claude-sonnet"]
-    - gpt-4o: ["azure-gpt-4o"]
-    - groq-llama-70b: ["bedrock-llama"]
+    - lite: ["base"]
+    - base: ["lite", "complex"]
+    - complex: ["base"]
 
 litellm_settings:
   drop_params: true

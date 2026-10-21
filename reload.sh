@@ -5,6 +5,8 @@
 # Usage: ./reload.sh            # apply + restart
 #        ./reload.sh --no-apply # only restart (e.g. after ./set-secret.sh)
 set -euo pipefail
+# Terraform can't read `aws login` sessions directly — hand it the CLI's temporary credentials.
+[ -n "${AWS_ACCESS_KEY_ID:-}" ] || eval "$(aws configure export-credentials --format env)"
 TF="terraform -chdir=$(dirname "$0")/terraform"
 
 if [ "${1:-}" != "--no-apply" ]; then

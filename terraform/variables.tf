@@ -63,6 +63,23 @@ variable "root_volume_gb" {
   default = 40
 }
 
+variable "swap_gb" {
+  description = "Swap file size on the host. Needed on 2 GiB instances (t4g.small / t3.small); 0 disables."
+  type        = number
+  default     = 2
+}
+
+variable "cpu_credits" {
+  description = "Burstable (t-family) credit mode: standard (no surprise charges, throttles) or unlimited."
+  type        = string
+  default     = "standard"
+
+  validation {
+    condition     = contains(["standard", "unlimited"], var.cpu_credits)
+    error_message = "cpu_credits must be \"standard\" or \"unlimited\"."
+  }
+}
+
 variable "litellm_tag" {
   description = "Exact LiteLLM image tag (v1.83.0 or later). Never 'latest'."
   type        = string
@@ -106,4 +123,17 @@ variable "provider_secret_names" {
   description = "External provider keys. Created as REPLACE_ME secrets; fill with set-secret.sh. Bedrock needs none."
   type        = list(string)
   default     = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "COHERE_API_KEY"]
+}
+
+# ---------- Cost alert ----------
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget for the account; alerts at 80% actual and 100% forecast."
+  type        = number
+  default     = 25
+}
+
+variable "budget_alert_email" {
+  description = "Email for budget alerts. Empty = no budget."
+  type        = string
+  default     = ""
 }

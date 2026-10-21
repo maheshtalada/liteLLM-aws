@@ -261,8 +261,18 @@ resource "aws_iam_instance_profile" "instance" {
 }
 
 # ---------- EC2 ----------
+# Pick the ARM (Graviton, e.g. t4g) or x86 AMI to match the instance type.
+data "aws_ec2_instance_type" "this" {
+  instance_type = var.instance_type
+}
+
+locals {
+  arch      = contains(data.aws_ec2_instance_type.this.supported_architectures, "arm64") ? "arm64" : "x86_64"
+  burstable = data.aws_ec2_instance_type.this.burstable_performance_supported
+}
+
 data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-${local.arch}"
 }
 
 resource "aws_instance" "litellm" {
@@ -279,6 +289,14 @@ resource "aws_instance" "litellm" {
     http_endpoint               = "enabled"
   }
 
+  # t-family: "standard" never bills for extra CPU credits (the instance is throttled instead).
+  dynamic "credit_specification" {
+    for_each = local.burstable ? [1] : []
+    content {
+      cpu_credits = var.cpu_credits
+    }
+  }
+
   root_block_device {
     volume_type = "gp3"
     volume_size = var.root_volume_gb
@@ -293,6 +311,7 @@ resource "aws_instance" "litellm" {
     bucket          = aws_s3_bucket.bundle.id
     region          = var.region
     compose_version = var.compose_version
+    swap_gb         = var.swap_gb
   })
 
   tags = {

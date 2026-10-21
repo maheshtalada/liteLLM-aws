@@ -5,6 +5,8 @@
 #   e.g. ./new-key.sh priya@example.com platform 50
 # The key is printed once — hand it to the user directly. The master key is never printed.
 set -euo pipefail
+# Terraform can't read `aws login` sessions directly — hand it the CLI's temporary credentials.
+[ -n "${AWS_ACCESS_KEY_ID:-}" ] || eval "$(aws configure export-credentials --format env)"
 
 USER_EMAIL="${1:?usage: ./new-key.sh <user_email> <team> [max_budget_usd]}"
 TEAM="${2:?usage: ./new-key.sh <user_email> <team> [max_budget_usd]}"

@@ -17,7 +17,7 @@ vpc_id              = ""
 subnet_id           = ""
 associate_public_ip = true
 
-instance_type = "t3.large"
+instance_type = "t4g.small" # ARM, Free Tier eligible; use t4g.medium for ~30 users
 
 # Bedrock region (empty = same as region). APAC cross-region profiles work from ap-south-1.
 bedrock_region = ""
@@ -31,3 +31,7 @@ provider_secret_names = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_API_KEY",
 tags = {
   Owner = "platform-team"
 }
+
+# Monthly AWS cost alert (emails at 80% actual / 100% forecast). Empty email = no budget.
+monthly_budget_usd = 25
+budget_alert_email = ""
