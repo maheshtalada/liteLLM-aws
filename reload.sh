@@ -21,7 +21,7 @@ CMD_ID=$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name AWS-RunShellScript \
   --comment "litellm reload" \
-  --parameters 'commands=["/usr/local/bin/litellm-up"]' \
+  --parameters 'commands=["bash /usr/local/bin/litellm-up"]' \
   --query 'Command.CommandId' --output text)
 
 echo "Reloading LiteLLM on $INSTANCE_ID (command $CMD_ID)..."

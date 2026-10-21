@@ -51,5 +51,31 @@ services:
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     restart: unless-stopped
 
+  # Public HTTPS (only when public_https = true; litellm-up sets COMPOSE_PROFILES=https)
+  caddy:
+    image: caddy:2.11.7
+    container_name: litellm-caddy
+    profiles: ["https"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificates — kept across restarts to avoid Let's Encrypt rate limits
+      - caddy_config:/config
+    depends_on:
+      - litellm
+    restart: unless-stopped
+    logging:
+      driver: awslogs
+      options:
+        awslogs-group: ${LOG_GROUP}
+        awslogs-region: ${LOG_REGION}
+        awslogs-stream: caddy
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

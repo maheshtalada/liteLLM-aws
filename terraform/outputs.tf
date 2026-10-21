@@ -2,6 +2,7 @@ output "gateway_url" {
   description = "With HTTPS, point a DNS name matching your ACM cert at alb_dns_name."
   value = (
     local.https_enabled ? "https://${aws_lb.this[0].dns_name}" :
+    local.caddy_enabled ? "https://${var.public_hostname != "" ? var.public_hostname : "${replace(aws_eip.litellm[0].public_ip, ".", "-")}.sslip.io"}" :
     var.associate_public_ip ? "http://${aws_eip.litellm[0].public_ip}:4000" :
     "http://${aws_instance.litellm.private_ip}:4000"
   )

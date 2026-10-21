@@ -10,7 +10,10 @@ APP=/opt/litellm
 mkdir -p "$APP"
 
 # Refresh the launcher itself, then compose/config bundle.
-aws s3 cp "s3://$BUCKET/bin/litellm-up" /usr/local/bin/litellm-up --region "$REGION" --only-show-errors
+# Download to a temp file and rename: keeps the exec bit, and never rewrites the file this run is reading.
+aws s3 cp "s3://$BUCKET/bin/litellm-up" /usr/local/bin/.litellm-up.new --region "$REGION" --only-show-errors
+chmod 755 /usr/local/bin/.litellm-up.new
+mv -f /usr/local/bin/.litellm-up.new /usr/local/bin/litellm-up
 aws s3 sync "s3://$BUCKET/app/" "$APP/" --region "$REGION" --delete --exclude ".env*" --only-show-errors
 
 # shellcheck disable=SC1091
@@ -31,6 +34,17 @@ done
   printf 'AZURE_API_VERSION=%s\n' "$AZURE_API_VERSION"
   printf 'LOG_GROUP=%s\n'         "$LOG_GROUP"
   printf 'LOG_REGION=%s\n'        "$LOG_REGION"
+  if [ "${PUBLIC_HTTPS:-false}" = "true" ]; then
+    HOST="${PUBLIC_HOSTNAME:-}"
+    if [ -z "$HOST" ]; then
+      # No domain given: <public-ip-with-dashes>.sslip.io resolves to this instance.
+      TOKEN=$(curl -sf -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+      IP=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+      HOST="${IP//./-}.sslip.io"
+    fi
+    printf 'PUBLIC_HOSTNAME=%s\n'  "$HOST"
+    printf 'COMPOSE_PROFILES=https\n'
+  fi
 } >> "$TMP"
 mv "$TMP" "$APP/.env"
 chmod 600 "$APP/.env"

@@ -1,161 +1,188 @@
 # LiteLLM Gateway on a single EC2 instance
 
-One OpenAI-compatible endpoint in front of many model providers, on one small EC2 instance in
-**Mumbai (`ap-south-1`)**. It currently serves **free-tier models only** (Gemini, Groq, OpenRouter,
-Z.AI GLM, Cohere), grouped into three model names — `lite`, `base`, `complex`. Bedrock and paid
-providers (Anthropic, OpenAI, Azure) can be added back in `app/config.yaml`.
+One OpenAI-compatible HTTPS endpoint in front of many AI model providers, running on one small
+EC2 instance in **Mumbai (`ap-south-1`)**. Each person gets their own key, and usage is tracked per
+user and per team.
+
+- **Live URL:** `https://3-111-59-142.sslip.io` (admin UI at `/ui`)
+- **Models:** free tiers only for now (Gemini, Groq, OpenRouter, Z.AI GLM, Cohere), exposed as three
+  model names: `lite`, `base` and `complex`
+- **Cost:** about **$18–20/month** of AWS compute; the models cost $0 on free tiers
+
+---
+
+## Contents
+
+1. [Architecture](#architecture)
+2. [Setup from scratch](#setup-from-scratch) (steps 1–8)
+3. [Shell setup (once per terminal)](#shell-setup-once-per-terminal)
+4. [Model tiers](#model-tiers)
+5. [Per-user keys](#per-user-keys)
+6. [What's in the AWS console](#whats-in-the-aws-console)
+7. [Day-2 operations](#day-2-operations)
+8. [Troubleshooting](#troubleshooting)
+9. [Cost](#cost)
+10. [Hardening checklist](#hardening-checklist)
+11. [Tear down](#tear-down)
+12. [Developing this repo](#developing-this-repo)
+
+---
 
 ## Architecture
 
 ```
-Clients (apps, agents, Claude Code)
-     │  HTTPS 443 (allowed_cidrs)          ← optional ALB + ACM when acm_certificate_arn is set
-     ▼                                        (otherwise direct HTTP :4000 for testing)
-┌──────────────────── EC2 (Amazon Linux 2023, t4g.small ARM) ───────────────┐
-│  docker compose                                                           │
-│   ├─ litellm   :4000  ──► lite / base / complex  ──► Gemini / Groq / OpenRouter / GLM / Cohere
-│   │                   ──► (optional) Bedrock via instance role, IMDSv2
-│   ├─ postgres  (virtual keys, teams, budgets, spend)  → EBS, daily snapshots
-│   └─ redis     (rate limits, router state)                                │
-└───────────────────────────────────────────────────────────────────────────┘
-  Secrets Manager: litellm/LITELLM_MASTER_KEY, LITELLM_SALT_KEY, POSTGRES_PASSWORD, <PROVIDER>_API_KEY
-  S3 (versioned):  config.yaml, docker-compose.yml, launcher      CloudWatch Logs: /litellm/litellm
-  Access: SSM Session Manager (no SSH port, no key pair)
+Users / apps (OpenAI SDK, curl, agents) — each with their own LiteLLM key
+     │  HTTPS 443 → https://<ip-with-dashes>.sslip.io     (port 80 only redirects + renews the cert)
+     ▼
+┌───────────────── EC2 t4g.small (ARM, Amazon Linux 2023, Mumbai) ─────────────────┐
+│ docker compose                                                                   │
+│  ├─ caddy     :443  Let's Encrypt certificate, reverse proxy ─┐                  │
+│  ├─ litellm   :4000 ◄──────────────────────────────────────────┘                  │
+│  │     lite / base / complex ──► Gemini · Groq · OpenRouter · Z.AI GLM · Cohere │
+│  ├─ postgres  users, teams, virtual keys, spend logs  (30 GB EBS, daily snapshots)│
+│  └─ redis     router state, rate limits                                          │
+└──────────────────────────────────────────────────────────────────────────────────┘
+ Secrets Manager  litellm/LITELLM_MASTER_KEY, LITELLM_SALT_KEY, POSTGRES_PASSWORD, <PROVIDER>_API_KEY
+ S3 (versioned)   app/config.yaml, docker-compose.yml, Caddyfile, bootstrap.env, bin/litellm-up
+ CloudWatch Logs  /litellm/litellm (streams: litellm, caddy)
+ Access           SSM Session Manager only. No SSH port, no key pair. Port 4000 open only to allowed_cidrs.
+ Budget           AWS Budget "litellm-monthly" emails at 80% actual / 100% forecast of $25
 ```
 
-## Prerequisites
+How config reaches the host: `terraform apply` uploads `app/*` and the launcher to S3. On every
+boot and every `./reload.sh`, the host runs `/usr/local/bin/litellm-up`, which:
 
-- Terraform ≥ 1.5, AWS CLI v2, [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-  (`brew install awscli`, `brew install --cask session-manager-plugin`)
-- Signed in: `aws login --region ap-south-1`, then `aws sts get-caller-identity` to confirm the account.
-- **New AWS sign-up experience (Builder ID / AWS Settings "Projects")**: AWS assigns India-based
-  projects to Sydney and blocks other Regions with a managed SCP. To use Mumbai you must
-  *activate advanced features* (irreversible; removes the spend limit), then in the management account
-  add `"ap-south-1"` to **every** `aws:RequestedRegion` list in
-  `AdvancedModeRegionRestrictionSecurityControlPolicy` (AWS Settings → Manage Region policy).
-- (Only if you add Bedrock models) **Bedrock model access** in your region: open the Bedrock console → Model catalog and make sure the
-  models you list in `config.yaml` are usable in your account (Anthropic models may require a one-time
-  use-case form). Do this once as an admin.
-- (Recommended) remote state backend — uncomment it in `terraform/versions.tf`.
+1. syncs the files from S3,
+2. writes `/opt/litellm/.env` from Secrets Manager (readable by root only),
+3. runs `docker compose up`.
 
-### Terraform setup (macOS)
+---
+
+## Setup from scratch
+
+These steps take you from an empty Mac to a working gateway, in about 30 minutes. Run every command
+from the repo root.
+
+### Step 1 — Install the tools (macOS)
 
 ```bash
 brew tap hashicorp/tap
-brew install hashicorp/tap/terraform
-terraform version                                # must be ≥ 1.5
+brew install hashicorp/tap/terraform awscli jq shellcheck gh
+brew install --cask session-manager-plugin            # asks for your Mac password
+
+terraform version                # ≥ 1.5
+aws --version                    # aws-cli/2.x
+session-manager-plugin --version
 ```
 
-Other platforms: https://developer.hashicorp.com/terraform/install
+Docker is **not** needed on your Mac. It runs only on the EC2 instance.
 
-### Validate the Terraform config
-
-All Terraform files live in `terraform/`; run from the repo root with `-chdir`:
+### Step 2 — Get the code
 
 ```bash
-terraform -chdir=terraform init -backend=false   # download providers only, no state backend
-terraform -chdir=terraform fmt -check -recursive # formatting (drop -check to auto-fix)
-terraform -chdir=terraform validate              # syntax + internal consistency
-```
-
-If you signed in with `aws login`, Terraform can't read that session directly. Before `plan`/`apply`/`output`, run
-`eval "$(aws configure export-credentials --format env)"` in the same shell (`reload.sh` and `new-key.sh` do this for you).
-
-`validate` needs no AWS credentials or `terraform.tfvars`. Run it after editing any `.tf` file;
-use `terraform -chdir=terraform plan` (needs credentials and tfvars) to see real changes.
-
-### Editor setup (VS Code)
-
-| Extension | ID | For |
-|---|---|---|
-| HashiCorp Terraform | `hashicorp.terraform` | `*.tf` — highlighting, autocomplete, validation, `terraform fmt` |
-| YAML | `redhat.vscode-yaml` | `app/config.yaml`, `app/docker-compose.yml` |
-| ShellCheck | `timonwong.shellcheck` | `set-secret.sh`, `reload.sh`, `host/litellm-up` (needs `brew install shellcheck`) |
-
-```bash
-brew install shellcheck
-code --install-extension hashicorp.terraform
-code --install-extension redhat.vscode-yaml
-code --install-extension timonwong.shellcheck
-```
-
-If `code` isn't found, run **Shell Command: Install 'code' command in PATH** from the VS Code command palette.
-To format Terraform on save, add to VS Code `settings.json`:
-
-```json
-"[terraform]": {
-  "editor.defaultFormatter": "hashicorp.terraform",
-  "editor.formatOnSave": true
-}
-```
-
-## Deploy
-
-```bash
-cp terraform/terraform.tfvars.example terraform/terraform.tfvars    # region, litellm_tag, allowed_cidrs, budget email
-# Edit app/config.yaml if you want different models
-
-eval "$(aws configure export-credentials --format env)"    # only if you signed in with `aws login`
-terraform -chdir=terraform init
-terraform -chdir=terraform apply                            # ~5 min; first boot takes another ~3–5 min
-
-# Provider keys (prompted, not echoed) — get free keys from each provider's console
-chmod +x *.sh
-./set-secret.sh GEMINI_API_KEY        # https://aistudio.google.com/apikey
-./set-secret.sh GROQ_API_KEY          # https://console.groq.com/keys
-./set-secret.sh OPENROUTER_API_KEY    # https://openrouter.ai/settings/keys
-./set-secret.sh ZAI_API_KEY           # https://z.ai (API keys)
-./set-secret.sh COHERE_API_KEY        # https://dashboard.cohere.com/api-keys (trial)
-./reload.sh --no-apply                # host re-reads secrets and restarts LiteLLM
-```
-
-Current settings (`terraform/terraform.tfvars`): `ap-south-1`, `t4g.small` (2 vCPU ARM, 2 GiB + 2 GiB swap,
-Free Tier eligible), 30 GB disk, `cpu_credits = "standard"` (never billed for extra CPU), LiteLLM `v1.106.1`,
-and a $25/month AWS Budget that emails at 80% actual / 100% forecast spend. Terraform picks the ARM or
-x86 AMI automatically from `instance_type`.
-
-### Model tiers (`app/config.yaml`)
-
-Clients send `"model": "lite" | "base" | "complex"`. Each name load-balances across every free deployment
-in that tier; a rate-limited deployment cools down for 60 s and requests fall back to another tier.
-
-| Tier | Use for | Deployments |
-|---|---|---|
-| `lite` | classification, extraction, short answers | Gemini 3.5 Flash-Lite, Groq gpt-oss-20b, GLM-4.5-Flash, Nemotron 3.5 Lightning |
-| `base` | general chat and writing (default) | Gemini 3.8 Flash, Groq gpt-oss-120b, Qwen 3.8 27B, GLM-4.7-Flash, MiniMax M3.1 Flash, Gemma 4 31B |
-| `complex` | reasoning, coding, long documents | Gemini 2.5 Pro, Nemotron 3 Ultra, Inkling, Laguna S 2.1, Cohere Command A |
-
-Free tiers are rate-limited, shared by everyone using the gateway, and may use prompts for training —
-don't send confidential data. Free model lists change often; links to check are at the top of `app/config.yaml`.
-
-Optional — if you add Bedrock models later, find the IDs callable from Mumbai:
-
-```bash
-aws bedrock list-inference-profiles --region ap-south-1 --query 'inferenceProfileSummaries[].inferenceProfileId'
-aws bedrock list-foundation-models  --region ap-south-1 --by-inference-type ON_DEMAND --query 'modelSummaries[].modelId'
-```
-
-## Shell setup (once per terminal)
-
-Every command below assumes these variables. `MASTER` is read without being printed — never `echo` it.
-
-```bash
+gh repo clone maheshtalada/liteLLM-aws ~/aws-deployments/liteLLM     # private repo
 cd ~/aws-deployments/liteLLM
-eval "$(aws configure export-credentials --format env)"     # aws login → env vars Terraform can read
-export AWS_REGION=ap-south-1
-URL=$(terraform -chdir=terraform output -raw gateway_url)
-ID=$(terraform -chdir=terraform output -raw instance_id)
-MASTER=$(aws secretsmanager get-secret-value --secret-id "$(terraform -chdir=terraform output -raw master_key_secret_name)" \
-  --query SecretString --output text)
+chmod +x *.sh
 ```
 
-`aws login` sessions expire; if a command says the token expired, run `aws login` again and repeat the block.
-
-## Verify
+### Step 3 — Sign in to AWS
 
 ```bash
-curl -sS $URL/health/liveliness                                   # → "I'm alive!"
-curl -sS $URL/v1/models -H "Authorization: Bearer $MASTER" | jq -r '.data[].id'   # → base, complex, lite
+aws login --region ap-south-1          # opens the browser; pick the project account
+aws configure set region ap-south-1
+aws sts get-caller-identity            # check the Account ID before you deploy anything
+```
+
+**Accounts from AWS's new sign-up experience (Builder ID / "Projects" in AWS Settings):** AWS
+assigns India-based projects to **Sydney** and blocks every other Region with a policy it manages.
+If `aws ec2 describe-vpcs --region ap-south-1` returns `UnauthorizedOperation ... explicit deny in a
+service control policy`, do this once:
+
+1. In **AWS Settings → Projects → Actions**, choose **Explore advanced features** and activate them.
+   - Activation is **irreversible** and removes the account's spend limit.
+   - The management account email must be new to AWS. A Gmail alias like `you+aws-mgmt@gmail.com` works.
+2. In **AWS Settings → management account → Manage Region policy**, edit
+   `AdvancedModeRegionRestrictionSecurityControlPolicy`. Add `"ap-south-1"` to **every**
+   `aws:RequestedRegion` list in it, and keep `unspecified`, `us-east-1` and `us-west-2`.
+3. Save, wait a minute, then run `aws ec2 describe-vpcs --region ap-south-1` again. It should print VPCs.
+
+### Step 4 — Configure
+
+```bash
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+curl -s https://checkip.amazonaws.com            # your public IP, for allowed_cidrs
+```
+
+Edit `terraform/terraform.tfvars`. This file is git-ignored. These are the values in use:
+
+| Variable | Value | Meaning |
+|---|---|---|
+| `region` | `"ap-south-1"` | Mumbai |
+| `litellm_tag` | `"v1.106.1"` | Exact LiteLLM image tag ([releases](https://github.com/BerriAI/litellm/releases)). Never `latest`. |
+| `allowed_cidrs` | `["<your-ip>/32"]` | Who can reach plain HTTP `:4000` directly (admin and debugging) |
+| `public_https` | `true` | Run Caddy and serve `https://<ip-with-dashes>.sslip.io` on 443 to everyone |
+| `public_hostname` | `""` | Optional: your own domain name instead of sslip.io (point an A record at the IP first) |
+| `instance_type` | `"t4g.small"` | 2 vCPU ARM with 2 GiB RAM, Free Tier eligible. Use `t4g.medium` for about 30 active users. |
+| `root_volume_gb` | `30` | Disk size. The Free Tier covers 30 GB. |
+| `provider_secret_names` | `["GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "ZAI_API_KEY", "COHERE_API_KEY"]` | One secret is created per provider |
+| `monthly_budget_usd` / `budget_alert_email` | `25` / your email | Cost alert email |
+| `azure_api_base` | `""` | Azure is not used |
+
+Optional: edit `app/config.yaml` to change which models are in each tier.
+
+### Step 5 — Deploy
+
+```bash
+eval "$(aws configure export-credentials --format env)"   # Terraform can't read `aws login` sessions directly
+terraform -chdir=terraform init
+terraform -chdir=terraform plan        # review: about 43 resources, all new
+terraform -chdir=terraform apply       # about 2 minutes
+terraform -chdir=terraform output      # gateway_url, instance_id, ssm_shell, ...
+```
+
+The instance then needs **about 6 minutes on first boot** to install Docker, pull the images and
+start LiteLLM. Wait until this prints `"I'm alive!"`:
+
+```bash
+curl -s $(terraform -chdir=terraform output -raw gateway_url)/health/liveliness
+```
+
+On a **brand-new** instance, the Elastic IP can attach after the first boot has already started.
+If HTTPS doesn't come up, run `./reload.sh --no-apply` once. That rebuilds the sslip.io hostname
+from the final IP.
+
+### Step 6 — Add provider API keys
+
+Get a free key from each provider, then store it. The script prompts for the key with hidden input.
+**Never paste keys into chat, git, or a terminal command line.**
+
+| Provider | Get a key | Free-tier notes |
+|---|---|---|
+| Google Gemini | https://aistudio.google.com/apikey | Covers all three tiers by itself; daily limits per project |
+| Groq | https://console.groq.com/keys | About 1,000 requests a day per model |
+| OpenRouter | https://openrouter.ai/settings/keys | `:free` models only; list changes weekly |
+| Z.AI (GLM) | https://z.ai → API keys | GLM-4.5/4.7-Flash are free |
+| Cohere | https://dashboard.cohere.com/api-keys | Trial key: 1,000 calls a month |
+
+```bash
+./set-secret.sh GEMINI_API_KEY
+./set-secret.sh GROQ_API_KEY
+./set-secret.sh OPENROUTER_API_KEY
+./set-secret.sh ZAI_API_KEY
+./set-secret.sh COHERE_API_KEY
+./reload.sh --no-apply          # the host re-reads the secrets and restarts LiteLLM (about 30 s)
+```
+
+You can skip providers. LiteLLM sends each request to the deployments that work, so Gemini alone
+is enough to start.
+
+### Step 7 — Verify
+
+Run the [shell setup](#shell-setup-once-per-terminal) first, then:
+
+```bash
+curl -sS $URL/health/liveliness                                            # "I'm alive!"
+curl -sS $URL/v1/models -H "Authorization: Bearer $MASTER" | jq -r '.data[].id'   # base, complex, lite
 
 for tier in lite base complex; do
   echo "== $tier"
@@ -165,90 +192,210 @@ for tier in lite base complex; do
 done
 ```
 
-The first line printed per tier is the deployment that actually answered (LiteLLM picks one at random).
+For each tier, the first line printed is the deployment that answered. LiteLLM picks one at random.
 
-If the host isn't up yet, check boot progress (first boot takes 3–5 minutes):
+**Admin UI:** open `$URL/ui` in a browser and log in with username `admin` and the master key as the
+password. To copy the master key to the clipboard without showing it: `printf %s "$MASTER" | pbcopy`.
+
+### Step 8 — Give people access and use it
+
+Create a key per person (see [Per-user keys](#per-user-keys)):
 
 ```bash
-aws ssm send-command --instance-ids $ID --document-name AWS-RunShellScript \
-  --parameters 'commands=["cloud-init status","systemctl is-active litellm","docker ps --format \"{{.Names}} {{.Status}}\""]' \
-  --query Command.CommandId --output text      # then:
-aws ssm get-command-invocation --instance-id $ID --command-id <id-from-above> --query StandardOutputContent --output text
+./new-key.sh priya@example.com platform 10      # email, team, optional USD budget
 ```
 
-Admin UI: open `$URL/ui` in a browser → log in with the master key → teams, **virtual keys**, budgets,
-RPM/TPM limits and per-key model allow-lists. Never hand out the master key.
+Users then point any OpenAI-compatible client at the gateway:
 
-## Per-user keys (usage tracking)
-
-Give every team member their own virtual key — spend, tokens and requests are then tracked per key,
-per user and per team (stored in Postgres, visible in the UI under **Usage** and via `/spend/logs`).
+```python
+from openai import OpenAI
+client = OpenAI(base_url="https://3-111-59-142.sslip.io", api_key="sk-...their key...")
+r = client.chat.completions.create(model="base", messages=[{"role": "user", "content": "Hello"}])
+print(r.choices[0].message.content)
+```
 
 ```bash
-./new-key.sh priya@example.com platform 50   # user, team, optional USD budget
+curl https://3-111-59-142.sslip.io/v1/chat/completions \
+  -H "Authorization: Bearer $THEIR_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"lite","messages":[{"role":"user","content":"Hello"}],"stream":true}'
+```
+
+---
+
+## Shell setup (once per terminal)
+
+Most commands below assume these variables. `MASTER` is read without being printed. Never `echo` it.
+
+```bash
+cd ~/aws-deployments/liteLLM
+eval "$(aws configure export-credentials --format env)"     # aws login session → env vars for Terraform
+export AWS_REGION=ap-south-1
+URL=$(terraform -chdir=terraform output -raw gateway_url)
+ID=$(terraform -chdir=terraform output -raw instance_id)
+MASTER=$(aws secretsmanager get-secret-value --secret-id "$(terraform -chdir=terraform output -raw master_key_secret_name)" \
+  --query SecretString --output text)
+```
+
+`aws login` sessions expire. If a command says the token has expired, run `aws login` again and
+repeat this block. `reload.sh` and `new-key.sh` export the credentials themselves.
+
+---
+
+## Model tiers
+
+Clients send `"model": "lite"`, `"base"` or `"complex"`. Each name load-balances across every free
+deployment in that tier. When a deployment fails twice, it cools down for 60 s. Fallbacks:
+`lite → base`, `base → lite → complex`, `complex → base`.
+
+| Tier | Use for | Deployments (`app/config.yaml`) |
+|---|---|---|
+| `lite` | classification, extraction, short answers | Gemini 3.5 Flash-Lite, Groq gpt-oss-20b, GLM-4.5-Flash, Nemotron 3.5 Lightning |
+| `base` | general chat and writing (the default) | Gemini 3.8 Flash, Groq gpt-oss-120b, Qwen 3.8 27B, GLM-4.7-Flash, MiniMax M3.1 Flash, Gemma 4 31B |
+| `complex` | reasoning, coding, long documents | Gemini 2.5 Pro, Nemotron 3 Ultra, Inkling, Laguna S 2.1, Cohere Command A |
+
+Free tiers are rate-limited and **shared by every user of the gateway**, and providers may use the
+prompts for training. Don't send confidential data. Free model lists change often; the links to
+check are at the top of `app/config.yaml`. To add Bedrock or paid providers later, add entries to
+`app/config.yaml` and their key names to `provider_secret_names`. See
+[Day-2 operations](#day-2-operations).
+
+---
+
+## Per-user keys
+
+Every person gets their own virtual key. Spend, tokens and requests are recorded in Postgres per
+key, per user and per team. You can see them in the UI under **Usage**.
+
+```bash
+./new-key.sh priya@example.com platform 10   # email, team, optional USD budget for that key
 ./new-key.sh arjun@example.com data          # no budget cap
 ```
 
-The script creates the team and user if missing, adds the user to the team, and prints the new key
-**once** — send it to the person privately. Users call the gateway with their own key in place of
-`$MASTER`. Check usage and revoke keys (needs the shell setup above):
+The script creates the team and the user if they don't exist, adds the user to the team, and prints
+the new key **once**. Send it to the person privately.
+
+After the [shell setup](#shell-setup-once-per-terminal):
 
 ```bash
 curl -sS "$URL/user/info?user_id=priya@example.com" -H "Authorization: Bearer $MASTER" | jq '.user_info.spend'
 curl -sS "$URL/team/info?team_id=platform"         -H "Authorization: Bearer $MASTER" | jq '.team_info.spend'
 curl -sS -X POST $URL/key/delete -H "Authorization: Bearer $MASTER" -H "Content-Type: application/json" \
-  -d '{"key_aliases":["<key alias shown in the UI>"]}'
+  -d '{"key_aliases":["<key alias shown in the UI>"]}'                      # revoke a key
 ```
+
+Never hand out the master key. It can do everything, including creating and deleting keys.
+
+---
+
+## What's in the AWS console
+
+Sign in with `aws login` or through AWS Settings and open the **project account**. Set the Region
+selector (top-right) to **Asia Pacific (Mumbai)**.
+
+**Everything at once:** **Resource Groups & Tag Editor → Tag Editor**. Choose Region `ap-south-1`
+and resource types `All supported resource types`, add tag `Project` = `litellm`, then
+**Search resources**. All resources created by this repo carry the tags `Project=litellm` and
+`ManagedBy=terraform`.
+
+| Service | Console location | What's there |
+|---|---|---|
+| **EC2** | EC2 → Instances → `litellm` | The server (t4g.small). Also the Monitoring tab and the Status checks. |
+| EC2 · Elastic IP | EC2 → Network & Security → Elastic IPs | `3.111.59.142` |
+| EC2 · Security group | EC2 → Security Groups → `litellm-instance` | Inbound rules: 443 and 80 open to everyone; 4000 open to your IP |
+| EC2 · EBS volume | EC2 → Elastic Block Store → Volumes (`litellm-root`) and Snapshots | 30 GB disk; daily snapshots tagged `Backup=litellm` |
+| **Systems Manager** | Systems Manager → Fleet Manager / Session Manager / Run Command | Browser shell on the server; history of `reload.sh` runs |
+| **Secrets Manager** | Secrets Manager → Secrets → `litellm/...` | Master key, salt key, Postgres password, provider keys |
+| **S3** | S3 → `litellm-bundle-...` | Config bundle (versioned) |
+| **CloudWatch** | CloudWatch → Logs → Log groups → `/litellm/litellm` | Logs from the `litellm` and `caddy` containers |
+| **IAM** (global) | IAM → Roles → `litellm-instance`, `litellm-dlm` | Instance permissions (read its secrets and bucket, SSM, logs) |
+| **Data Lifecycle Manager** | EC2 → Elastic Block Store → Lifecycle Manager | Daily snapshot policy; 7 are kept |
+| **Budgets** (global) | Billing and Cost Management → Budgets → `litellm-monthly` | $25/month alert |
+| **Costs** | Billing and Cost Management → Cost Explorer (group by Service) | What you're actually paying for |
+
+The same list from the CLI:
+
+```bash
+aws resourcegroupstaggingapi get-resources --region ap-south-1 --tag-filters Key=Project,Values=litellm \
+  --query 'ResourceTagMappingList[].ResourceARN' --output text | tr '\t' '\n'
+```
+
+---
 
 ## Day-2 operations
 
-Run the shell setup first. `reload.sh` and `new-key.sh` export the `aws login` credentials themselves.
+Run the [shell setup](#shell-setup-once-per-terminal) first.
 
 | Task | Command |
 |---|---|
-| Add/change models | edit `app/config.yaml` → `./reload.sh` |
-| Add a new provider | add its key name to `provider_secret_names` in tfvars → `./reload.sh` → `./set-secret.sh <KEY>` → `./reload.sh --no-apply` |
-| Rotate a provider key | `./set-secret.sh <KEY>` → `./reload.sh --no-apply` |
-| Upgrade LiteLLM | change `litellm_tag` in tfvars → `./reload.sh` |
+| Add or change models | Edit `app/config.yaml`, then `./reload.sh` (runs `terraform apply` and restarts) |
+| Add a new provider | Add its key name to `provider_secret_names`, then `./reload.sh`, then `./set-secret.sh <KEY>`, then `./reload.sh --no-apply` |
+| Rotate a provider key | `./set-secret.sh <KEY>`, then `./reload.sh --no-apply` |
+| Upgrade LiteLLM | Change `litellm_tag`, then `./reload.sh` |
 | Restart LiteLLM only | `./reload.sh --no-apply` |
 | Shell on the host | `aws ssm start-session --target $ID` |
+| Container status (on host) | `sudo docker ps` |
 | App logs (live) | `aws logs tail /litellm/litellm --follow` |
 | App logs (on host) | `sudo docker compose --project-directory /opt/litellm logs --tail 200 litellm` |
 | Boot logs (on host) | `sudo cat /var/log/cloud-init-output.log` |
-| Roll back config | `aws s3api list-object-versions --bucket "$(terraform -chdir=terraform output -raw bundle_bucket)" --prefix app/config.yaml` → copy the old version back with `aws s3api copy-object … --copy-source "<bucket>/app/config.yaml?versionId=<id>"` → `./reload.sh --no-apply` |
+| Roll back config | `aws s3api list-object-versions --bucket "$(terraform -chdir=terraform output -raw bundle_bucket)" --prefix app/config.yaml`, then copy the old version back with `aws s3api copy-object --copy-source "<bucket>/app/config.yaml?versionId=<id>" --bucket <bucket> --key app/config.yaml`, then `./reload.sh --no-apply` |
 | List DB snapshots | `aws ec2 describe-snapshots --owner-ids self --filters Name=tag:Backup,Values=litellm --query 'Snapshots[].[SnapshotId,StartTime]' --output table` |
-| Change cost alert | edit `monthly_budget_usd` / `budget_alert_email` in tfvars → `terraform -chdir=terraform apply` |
-| Bigger instance | `instance_type = "t4g.medium"` in tfvars → `terraform -chdir=terraform apply` (stop/resize/start, a few minutes down; switching ARM ↔ x86 changes the AMI and **replaces** the instance — snapshot first) |
-| Your IP changed | update `allowed_cidrs` in tfvars (`curl -s https://checkip.amazonaws.com`) → `terraform -chdir=terraform apply` |
-| Stop the server (save cost) | `aws ec2 stop-instances --instance-ids $ID` · start: `aws ec2 start-instances --instance-ids $ID` (disk + IP still billed, ~$7/mo) |
+| Your IP changed | Update `allowed_cidrs` (find it with `curl -s https://checkip.amazonaws.com`), then `terraform -chdir=terraform apply`. This only affects `:4000`; HTTPS is open to everyone. |
+| Use your own domain | Point an A record at the Elastic IP, set `public_hostname = "llm.example.com"`, then `./reload.sh` |
+| Turn public HTTPS off | `public_https = false`, then `./reload.sh`. This closes 80/443; access is then `http://<ip>:4000` from `allowed_cidrs` only. |
+| Change the cost alert | Edit `monthly_budget_usd` / `budget_alert_email`, then `terraform -chdir=terraform apply` |
+| Bigger instance | `instance_type = "t4g.medium"`, then `terraform -chdir=terraform apply`. It stops, resizes and starts (a few minutes of downtime). Switching ARM ↔ x86 changes the AMI and **replaces** the instance, so snapshot first. |
+| Stop the server to save money | `aws ec2 stop-instances --instance-ids $ID`. Start: `aws ec2 start-instances --instance-ids $ID`. The disk and IP are still billed (about $7/mo). |
 
-## When to graduate from one instance
+---
 
-This is a single host: a reboot or instance failure means a few minutes of downtime, and Postgres
-lives on the instance. Move to the ECS package (RDS + ElastiCache + 2+ tasks) when the gateway
-becomes production-critical for clients. `app/config.yaml` carries over unchanged.
+## Troubleshooting
 
-## Hardening checklist
+| Symptom | Check / fix |
+|---|---|
+| `curl` hangs or `HTTP 000` after deploy | First boot takes about 6 minutes. Check progress: `aws ssm start-session --target $ID`, then `cloud-init status` and `sudo systemctl status litellm`. |
+| HTTPS certificate error / Caddy not running | `sudo docker logs litellm-caddy`. Ports 80 and 443 must be open to the internet, and `PUBLIC_HOSTNAME` in `/opt/litellm/.env` must match the current IP. Run `./reload.sh --no-apply`. |
+| `401` from the API | Wrong or missing key: `Authorization: Bearer <key>`. |
+| Model returns `RateLimitError` / `429` | A free tier is exhausted. LiteLLM falls back automatically, but if every provider in a tier is out, wait or add a paid provider. |
+| `AuthenticationError` for a provider | Its key is missing or wrong. Run `./set-secret.sh <KEY>`, then `./reload.sh --no-apply`. |
+| `Unable to locate credentials` / Terraform `No valid credential sources` | Run `aws login`, then `eval "$(aws configure export-credentials --format env)"`. |
+| `UnauthorizedOperation ... service control policy` | The Region isn't allowed. See [Step 3](#step-3--sign-in-to-aws). |
+| EC2 `InvalidParameterCombination ... not eligible for Free Tier` | The account is on the Free plan. Use a Free Tier type (t4g.small, t3.small, c7i-flex.large, m7i-flex.large). |
+| Server out of memory | `free -m` on the host. The 2 GiB of RAM plus 2 GiB of swap fits light use; move up to `t4g.medium`. |
 
-- [ ] ACM cert + DNS name → set `acm_certificate_arn` (direct :4000 is plain HTTP — testing only)
-- [ ] `allowed_cidrs` limited to office/VPN ranges
-- [ ] Remote, encrypted Terraform state
-- [ ] Never change `LITELLM_SALT_KEY` once keys/models are stored in the DB
-- [ ] Keep client data on Bedrock/paid providers; restrict free-tier models to dev virtual keys
-- [ ] Optional: Bedrock Guardrails, AWS WAF on the ALB, private subnet + NAT (`associate_public_ip = false`)
+---
 
-## Rough monthly cost (ap-south-1, compute only)
+## Cost
+
+Compute only, in `ap-south-1`, running 24/7.
 
 | Item | USD/month |
 |---|---|
-| t4g.small (current) | ~8.2 |
-| 30 GB gp3 + snapshots | ~3–4 |
-| Public IPv4 (Elastic IP) | ~3.65 |
+| t4g.small | ~8.20 |
+| 30 GB gp3 disk + daily snapshots | ~3–4 |
+| Elastic IP (public IPv4) | ~3.65 |
 | 8 Secrets Manager secrets | ~3.20 |
+| CloudWatch Logs, S3, data transfer | < 1 |
 | **Total** | **~18–20** |
 
-Bigger options: t4g.medium (4 GiB, ~$16) for ~30 active users; the optional ALB adds ~$20.
-Model usage is $0 on free tiers; Bedrock/paid providers are billed separately.
+- **Free-tier models:** cost $0.
+- **Bigger instance:** t4g.medium (4 GiB, ~$16) for about 30 active users.
+- **Load balancer:** the optional ALB adds ~$20; it isn't needed, because Caddy provides HTTPS for free.
+- **Spend alert:** the AWS Budget `litellm-monthly` emails you before spend passes $25.
+
+---
+
+## Hardening checklist
+
+- [x] HTTPS with a valid certificate (Caddy + Let's Encrypt). The master key never travels over plain HTTP.
+- [x] Per-user keys with optional budgets; no SSH (SSM only); encrypted disk; secrets in Secrets Manager
+- [ ] Own domain instead of sslip.io (`public_hostname`)
+- [ ] Restrict `public_cidrs` to office/VPN ranges if the gateway doesn't need to be open to the whole internet
+- [ ] Remote, encrypted Terraform state (uncomment the backend in `terraform/versions.tf`)
+- [ ] MFA on the management account (AWS Settings → Set up MFA)
+- [ ] Never change `LITELLM_SALT_KEY` once keys are stored in the DB
+- [ ] Keep confidential data on Bedrock or paid providers; free tiers may train on prompts
+
+---
 
 ## Tear down
 
@@ -262,4 +409,51 @@ Secrets go into a 7-day recovery window. Snapshots made by DLM are kept until yo
 ```bash
 aws ec2 describe-snapshots --owner-ids self --filters Name=tag:Backup,Values=litellm --query 'Snapshots[].SnapshotId' --output text \
   | xargs -n1 aws ec2 delete-snapshot --snapshot-id
+```
+
+---
+
+## Developing this repo
+
+### Layout
+
+| Path | What |
+|---|---|
+| `terraform/*.tf` | VPC lookup, security group, IAM, Secrets Manager, S3 bundle, EC2, Elastic IP, optional ALB, DLM snapshots, budget |
+| `app/config.yaml` | LiteLLM model list and router settings |
+| `app/docker-compose.yml` | litellm, postgres, redis, caddy (`https` profile) |
+| `app/Caddyfile` | HTTPS reverse proxy to `litellm:4000` |
+| `host/user-data.sh.tftpl` | First boot: swap, Docker, Compose, systemd unit |
+| `host/litellm-up` | Runs on every boot and reload: S3 sync, `.env` from Secrets Manager, compose up |
+| `set-secret.sh` / `reload.sh` / `new-key.sh` | Store a provider key / apply and restart / create a per-user key |
+
+### Validate changes
+
+```bash
+terraform -chdir=terraform init -backend=false   # providers only
+terraform -chdir=terraform fmt -check -recursive # drop -check to auto-fix
+terraform -chdir=terraform validate              # needs no credentials and no tfvars
+shellcheck -S warning *.sh host/litellm-up
+```
+
+### Editor setup (VS Code)
+
+| Extension | ID | For |
+|---|---|---|
+| HashiCorp Terraform | `hashicorp.terraform` | `*.tf`: highlighting, autocomplete, validation, format on save |
+| YAML | `redhat.vscode-yaml` | `app/config.yaml`, `app/docker-compose.yml` |
+| ShellCheck | `timonwong.shellcheck` | `*.sh`, `host/litellm-up` |
+
+```bash
+code --install-extension hashicorp.terraform
+code --install-extension redhat.vscode-yaml
+code --install-extension timonwong.shellcheck
+```
+
+If `code` isn't found, run **Shell Command: Install 'code' command in PATH** from the VS Code
+command palette. To format on save, add this to VS Code `settings.json`:
+
+```json
+"[terraform]":      { "editor.defaultFormatter": "hashicorp.terraform", "editor.formatOnSave": true },
+"[terraform-vars]": { "editor.defaultFormatter": "hashicorp.terraform", "editor.formatOnSave": true }
 ```

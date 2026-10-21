@@ -137,3 +137,22 @@ variable "budget_alert_email" {
   type        = string
   default     = ""
 }
+
+# ---------- Public HTTPS on the instance (Caddy + Let's Encrypt, no ALB) ----------
+variable "public_https" {
+  description = "Run Caddy on the instance for HTTPS on 443 with a free Let's Encrypt cert. Ignored when acm_certificate_arn is set."
+  type        = bool
+  default     = false
+}
+
+variable "public_hostname" {
+  description = "Hostname for Caddy's certificate. Empty = <public-ip-with-dashes>.sslip.io (no domain needed)."
+  type        = string
+  default     = ""
+}
+
+variable "public_cidrs" {
+  description = "Who can reach 80/443 when public_https is on. Every request still needs a LiteLLM key."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

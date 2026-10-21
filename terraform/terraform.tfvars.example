@@ -35,3 +35,8 @@ tags = {
 # Monthly AWS cost alert (emails at 80% actual / 100% forecast). Empty email = no budget.
 monthly_budget_usd = 25
 budget_alert_email = ""
+
+# Public HTTPS without an ALB: Caddy on the instance gets a free Let's Encrypt cert.
+# Empty public_hostname = <public-ip-with-dashes>.sslip.io (no domain needed).
+public_https    = false
+public_hostname = ""

@@ -17,6 +17,7 @@ locals {
   subnet_id      = var.subnet_id != "" ? var.subnet_id : sort(data.aws_subnets.vpc.ids)[0]
   alb_subnet_ids = length(var.alb_subnet_ids) > 0 ? var.alb_subnet_ids : data.aws_subnets.vpc.ids
   https_enabled  = var.acm_certificate_arn != ""
+  caddy_enabled  = var.public_https && !local.https_enabled && var.associate_public_ip
   bedrock_region = var.bedrock_region != "" ? var.bedrock_region : var.region
   log_group_name = "/litellm/${var.name}"
 }
@@ -44,6 +45,17 @@ resource "aws_vpc_security_group_ingress_rule" "direct" {
   cidr_ipv4         = each.value
   from_port         = 4000
   to_port           = 4000
+  ip_protocol       = "tcp"
+}
+
+# Caddy on the instance: 443 for HTTPS, 80 for the Let's Encrypt HTTP challenge (and redirect).
+resource "aws_vpc_security_group_ingress_rule" "public_https" {
+  for_each          = local.caddy_enabled ? { for pair in setproduct(var.public_cidrs, [80, 443]) : "${pair[0]}:${pair[1]}" => pair } : {}
+  security_group_id = aws_security_group.instance.id
+  description       = "Caddy ${each.value[1]}"
+  cidr_ipv4         = each.value[0]
+  from_port         = each.value[1]
+  to_port           = each.value[1]
   ip_protocol       = "tcp"
 }
 
@@ -170,6 +182,8 @@ resource "aws_s3_object" "bootstrap_env" {
     "AZURE_API_VERSION=${var.azure_api_version}",
     "LOG_GROUP=${local.log_group_name}",
     "LOG_REGION=${var.region}",
+    "PUBLIC_HTTPS=${local.caddy_enabled}",
+    "PUBLIC_HOSTNAME=${var.public_hostname}",
     "",
   ])
 }

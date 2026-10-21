@@ -1,0 +1,9 @@
+# HTTPS in front of LiteLLM. Caddy gets and renews a Let's Encrypt certificate for
+# PUBLIC_HOSTNAME automatically (needs ports 80 and 443 open to the internet).
+{$PUBLIC_HOSTNAME} {
+	encode gzip
+	reverse_proxy litellm:4000 {
+		# Stream tokens to the client as they arrive (chat completions with "stream": true)
+		flush_interval -1
+	}
+}
