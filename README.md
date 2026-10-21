@@ -122,6 +122,20 @@ curl -s $URL/v1/chat/completions -H "Authorization: Bearer $MASTER" -H "Content-
 Admin UI: `$URL/ui` → log in with the master key → create teams and **virtual keys** with budgets,
 RPM/TPM limits and per-key model allow-lists. Never hand out the master key.
 
+## Per-user keys (usage tracking)
+
+Give every team member their own virtual key — spend, tokens and requests are then tracked per key,
+per user and per team (stored in Postgres, visible in the UI under **Usage** and via `/spend/logs`).
+
+```bash
+./new-key.sh priya@example.com platform 50   # user, team, optional USD budget
+./new-key.sh arjun@example.com data          # no budget cap
+```
+
+The script creates the team and user if missing, adds the user to the team, and prints the new key
+**once** — send it to the person privately. Users call the gateway with their own key in place of
+`$MASTER`. To revoke a key: UI → Virtual Keys → delete, or `POST $URL/key/delete`.
+
 ## Day-2 operations
 
 | Task | How |
