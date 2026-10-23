@@ -22,3 +22,6 @@ override.tf.json
 
 # OS / editor
 .DS_Store
+
+# Generated per-user keys (new-key.sh batch mode)
+keys/

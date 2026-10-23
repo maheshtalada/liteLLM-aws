@@ -320,6 +320,35 @@ key, per user and per team. You can see them in the UI under **Usage**.
 The script creates the team and the user if they don't exist, adds the user to the team, and prints
 the new key **once**. Send it to the person privately.
 
+**Many people at once** (`--emails "a,b,c"`, `--file list.csv`, `--file list.xlsx` or `--sheet <Google Sheets URL>`), with limits applied
+to every key:
+
+```bash
+./new-key.sh --team students --file students.xlsx \
+  --models lite,base --budget 2 --budget-duration 1d --rpm 10 --tpm 20000 --expires 90d
+```
+
+| Option | LiteLLM key field | Example |
+|---|---|---|
+| `--models a,b` | `models` | `lite,base` |
+| `--budget USD` | `max_budget` | `2` |
+| `--budget-duration` | `budget_duration` | `1d`, `7d`, `30d` |
+| `--rpm` / `--tpm` | `rpm_limit` / `tpm_limit` | `10` / `20000` |
+| `--expires` | `duration` | `90d` |
+| `--dry-run` | — | parse the input and show what would be created |
+
+- **Input file:** column A is the email; column B is an optional per-person budget. Headers, blanks,
+  invalid entries and duplicates are skipped. `.xlsx` is read with the Python standard library (first
+  sheet), so nothing extra needs installing.
+- **Google Sheets:** `--sheet <url>` downloads `…/export?format=csv&gid=<tab>`. It works only for sheets
+  shared as "Anyone with the link: Viewer". For a private sheet, download it as .xlsx/.csv and use
+  `--file`. Reading private sheets directly would need Google OAuth, which this script doesn't do.
+- **Output:** batch mode never prints keys. It writes `keys/<team>-<time>.csv` and
+  `keys/<team>-<time>-messages.txt` (chmod 600; `keys/` is git-ignored). Send each person their own
+  message, then delete the files.
+- **Tested:** on 2026-10-23, a key restricted to `lite,base` listed only those models, and a request for
+  `bedrock-lite` was refused with `not available for this API key`.
+
 After the [shell setup](#shell-setup-once-per-terminal):
 
 ```bash
@@ -517,7 +546,7 @@ aws ec2 describe-snapshots --region ap-south-1 --owner-ids self --filters Name=t
 | `host/user-data.sh.tftpl` | First boot: swap, Docker, Compose, systemd unit |
 | `host/litellm-up` | Runs on every boot and reload: S3 sync, `.env` from Secrets Manager, compose up |
 | `login.sh` | `source ./login.sh`: sign in, check the account, export credentials, `ID`, `URL` |
-| `set-secret.sh` / `reload.sh` / `new-key.sh` | Store a provider key / apply and restart / create a per-user key |
+| `set-secret.sh` / `reload.sh` / `new-key.sh` | Store a provider key / apply and restart / create per-user keys (one, or a whole list from CSV/Excel) |
 
 ### Validate changes
 

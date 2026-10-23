@@ -34,6 +34,7 @@ browser, then run it again and pick **Console Dot Dream**.
 | Check it's up | `curl -s $URL/health/liveliness` (prints `"I'm alive!"`) |
 | Add or change a provider key | `./set-secret.sh GEMINI_API_KEY`, then `./reload.sh --no-apply` |
 | Give someone a key | `./new-key.sh priya@example.com students 5` (email, team, USD budget) |
+| Give a whole class keys | `./new-key.sh --team students --file students.xlsx --models lite,base --budget 2` (see [below](#keys-for-a-class-or-team)) |
 | Change models | Edit `app/config.yaml`, then `./reload.sh` |
 | Restart LiteLLM | `./reload.sh --no-apply` |
 | See logs | `aws logs tail /litellm/litellm --follow` |
@@ -74,6 +75,48 @@ Each name spreads requests across several models and falls back automatically wh
 - **Bedrock models:** cost money per token, but your data stays within AWS. They are used **only** when a
   client asks for them; free models never fall back to Bedrock. Leave them off student keys, or give
   those keys a dollar budget.
+
+---
+
+## Keys for a class or team
+
+Create everyone's keys in one command, from a list, a CSV or Excel file, or a Google Sheet:
+
+```bash
+./new-key.sh --team students --emails "priya@college.edu, arjun@college.edu" --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
+./new-key.sh --team students --file students.csv  --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
+./new-key.sh --team students --file students.xlsx --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
+./new-key.sh --team students --sheet "https://docs.google.com/spreadsheets/d/<id>/edit#gid=0" --models lite,base --budget 2
+./new-key.sh --team students --file students.csv --dry-run      # preview only; creates nothing
+```
+
+**File format (CSV or Excel):** email in column A, and optionally a per-student budget in column B
+that overrides `--budget`. Header rows, blank lines, invalid entries and duplicates are skipped. For an
+old `.xls` file, save it as `.xlsx` or CSV first.
+
+**Google Sheets:** `--sheet` reads the tab in the link, but only if the sheet is shared as **"Anyone
+with the link: Viewer"**. That means anyone who gets the link can see the emails. To keep the sheet
+private, use **File → Download → Microsoft Excel (.xlsx)** and pass that file to `--file`.
+
+| Option | Meaning | Suggested for students |
+|---|---|---|
+| `--models` | Models the key may use | `lite,base` (keeps paid Bedrock and the scarce `complex` models off) |
+| `--budget` | Spend cap per key, in USD | `2` (a usage cap on free models; real dollars on Bedrock) |
+| `--budget-duration` | Budget resets every… | `1d` |
+| `--rpm` / `--tpm` | Requests / tokens per minute | `10` / `20000` (shares the free quotas fairly) |
+| `--expires` | Key stops working after… | `90d` (end of course) |
+
+Keys are **not shown on screen**. They are written to two private files (readable only by you,
+git-ignored):
+
+- `keys/<team>-<time>.csv`: email, key and limits for each student
+- `keys/<team>-<time>-messages.txt`: a ready-to-send message per student (key, base URL, setup)
+
+Send each student only their own message, by direct message or email, never in a group chat. Then
+delete the files. Students never see the provider keys; those stay on the server.
+
+To manage keys later, use UI → **Virtual Keys** (edit limits, delete a key) and **Usage** (spend per student).
+To replace a lost key, delete the old one and run `./new-key.sh` again for that student.
 
 ---
 
@@ -144,7 +187,8 @@ Get free keys and store each one. You type the key at a hidden prompt.
 in the Bedrock console (Mumbai), go to **Model catalog**, open any Claude model and **submit use case
 details**. It takes effect in about 15 minutes.
 
-**6. Give people keys:** `./new-key.sh <email> <team> [budget]`. The key is shown once; send it privately.
+**6. Give people keys:** `./new-key.sh <email> <team> [budget]` for one person (the key is shown once),
+or `--file students.xlsx` for a whole class (see [Keys for a class or team](#keys-for-a-class-or-team)).
 
 ---
 

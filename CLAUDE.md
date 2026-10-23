@@ -14,7 +14,8 @@ Short guide: README.md. Full runbook (every command, console map, troubleshootin
 - `host/litellm-up` — runs on every boot / reload: S3 sync → render .env from Secrets Manager → compose up
 - `login.sh` — `source ./login.sh`: aws login if expired, refuse any account but 985040258825, export creds/AWS_REGION/ID/URL.
 - `set-secret.sh` — store a provider key (prompted, hidden). `reload.sh` — apply + restart via SSM.
-- `new-key.sh` — per-user virtual key (user + team) for usage tracking. The user runs it; it prints the
+- `new-key.sh` — per-user virtual keys (one, or batch via --emails / --file csv|xlsx / --sheet <public Google Sheet> with --models/--budget/--rpm/--expires;
+  batch writes keys to git-ignored keys/, never prints them). The user runs it; single mode prints the
   new key once, so don't run it yourself and capture the key in chat.
 
 ## Deploy workflow (follow in order)
