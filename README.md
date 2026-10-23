@@ -19,12 +19,13 @@ user and per team.
 4. [Model tiers](#model-tiers)
 5. [Per-user keys](#per-user-keys)
 6. [What's in the AWS console](#whats-in-the-aws-console)
-7. [Day-2 operations](#day-2-operations)
-8. [Troubleshooting](#troubleshooting)
-9. [Cost](#cost)
-10. [Hardening checklist](#hardening-checklist)
-11. [Tear down](#tear-down)
-12. [Developing this repo](#developing-this-repo)
+7. [Start and stop the server](#start-and-stop-the-server)
+8. [Day-2 operations](#day-2-operations)
+9. [Troubleshooting](#troubleshooting)
+10. [Cost](#cost)
+11. [Hardening checklist](#hardening-checklist)
+12. [Tear down](#tear-down)
+13. [Developing this repo](#developing-this-repo)
 
 ---
 
@@ -87,11 +88,37 @@ chmod +x *.sh
 
 ### Step 3 — Sign in to AWS
 
+**Shortcut (after the first deploy):** `source ./login.sh` does all of this in one command. It reuses
+your session if it's still valid, opens the browser only when it has expired, refuses the wrong account,
+and exports `AWS_REGION`, the Terraform credentials, `ID` and `URL`. It must be **sourced**, not run as
+`./login.sh`, so the exports stay in your shell. No credentials are stored. The first time:
+
 ```bash
-aws login --region ap-south-1          # opens the browser; pick the project account
+aws login --region ap-south-1          # opens the browser: choose the PROJECT account (see below)
 aws configure set region ap-south-1
-aws sts get-caller-identity            # check the Account ID before you deploy anything
+aws sts get-caller-identity --query '[Account,Arn]' --output text
 ```
+
+**Pick the right account.** After advanced features are activated (below), the browser offers
+several accounts. The gateway lives **only** in the project account:
+
+| Account | ID | Use for |
+|---|---|---|
+| **Console Dot Dream** (project account) | **`985040258825`** | ✅ Everything in this README: Terraform, scripts, start/stop |
+| Mahesh-Talada-Team Management Account | `275607988383` | Region policy (SCP), billing, budgets (console only) |
+| Identity Delegated Admin | `899562467062` | IAM Identity Center admin; ❌ not for this repo |
+
+If the check shows the wrong account, sign out of the AWS console in your browser (or use a private
+window) and run `aws login` again. The CLI reuses whichever console session the browser has.
+
+**One-line check.** Run it before any command that changes something:
+
+```bash
+[ "$(aws sts get-caller-identity --query Account --output text)" = 985040258825 ] && echo "OK: project account" || echo "WRONG ACCOUNT: run aws login again and pick Console Dot Dream"
+```
+
+Other accounts don't have the instance, so commands fail with errors like `InvalidInstanceID.NotFound`
+or `ResourceNotFoundException`. Worse, Terraform would try to create a second copy of everything there.
 
 **Accounts from AWS's new sign-up experience (Builder ID / "Projects" in AWS Settings):** AWS
 assigns India-based projects to **Sydney** and blocks every other Region with a policy it manages.
@@ -228,16 +255,25 @@ Most commands below assume these variables. `MASTER` is read without being print
 
 ```bash
 cd ~/aws-deployments/liteLLM
-eval "$(aws configure export-credentials --format env)"     # aws login session → env vars for Terraform
-export AWS_REGION=ap-south-1
-URL=$(terraform -chdir=terraform output -raw gateway_url)
-ID=$(terraform -chdir=terraform output -raw instance_id)
+source ./login.sh          # sign in if needed, check account, export AWS_REGION + credentials + ID + URL
 MASTER=$(aws secretsmanager get-secret-value --secret-id "$(terraform -chdir=terraform output -raw master_key_secret_name)" \
   --query SecretString --output text)
 ```
 
-`aws login` sessions expire. If a command says the token has expired, run `aws login` again and
-repeat this block. `reload.sh` and `new-key.sh` export the credentials themselves.
+`aws login` sessions expire (`login.sh` prints when). If a command says `Your session has expired`
+or `ExpiredToken`, run this block again.
+
+<details><summary>Same thing without login.sh</summary>
+
+```bash
+aws login --region ap-south-1                               # pick Console Dot Dream
+[ "$(aws sts get-caller-identity --query Account --output text)" = 985040258825 ] && echo "OK: project account" || echo "WRONG ACCOUNT: run aws login again and pick Console Dot Dream"
+eval "$(aws configure export-credentials --format env)"     # aws login session → env vars for Terraform
+export AWS_REGION=ap-south-1
+URL=$(terraform -chdir=terraform output -raw gateway_url)
+ID=$(terraform -chdir=terraform output -raw instance_id)
+```
+</details> `reload.sh` and `new-key.sh` export the credentials themselves.
 
 ---
 
@@ -289,7 +325,8 @@ Never hand out the master key. It can do everything, including creating and dele
 
 ## What's in the AWS console
 
-Sign in with `aws login` or through AWS Settings and open the **project account**. Set the Region
+Sign in through AWS Settings (or `aws login`) and open the **project account, Console Dot Dream
+(`985040258825`)**. The management and Identity Delegated Admin accounts don't contain these resources. Set the Region
 selector (top-right) to **Asia Pacific (Mumbai)**.
 
 **Everything at once:** **Resource Groups & Tag Editor → Tag Editor**. Choose Region `ap-south-1`
@@ -321,6 +358,46 @@ aws resourcegroupstaggingapi get-resources --region ap-south-1 --tag-filters Key
 
 ---
 
+## Start and stop the server
+
+Stop the instance when nobody is using it (overnight, weekends) to save about 60% of the cost.
+Starting and stopping are **AWS CLI** commands, not Terraform. Terraform defines *what exists*
+(instance, disk, IP, secrets), while start and stop only switch the existing server on or off.
+A stopped instance doesn't confuse Terraform: a later `plan` won't start it or recreate it.
+
+```bash
+source ./login.sh                      # signs in if needed, checks the account, sets $ID
+```
+
+| Task | Command |
+|---|---|
+| Check state | `aws ec2 describe-instances --region ap-south-1 --instance-ids $ID --query 'Reservations[0].Instances[0].State.Name' --output text` |
+| **Start** | `aws ec2 start-instances --region ap-south-1 --instance-ids $ID` |
+| Wait until running | `aws ec2 wait instance-running --region ap-south-1 --instance-ids $ID` |
+| **Stop** | `aws ec2 stop-instances --region ap-south-1 --instance-ids $ID` |
+| Wait until stopped | `aws ec2 wait instance-stopped --region ap-south-1 --instance-ids $ID` |
+
+After a **start**, LiteLLM and Caddy come up on their own (systemd runs `litellm-up` on boot) in about
+1–2 minutes. Check:
+
+```bash
+curl -s https://3-111-59-142.sslip.io/health/liveliness      # "I'm alive!"
+```
+
+**In the console:** set the Region to Mumbai, then **EC2 → Instances → `litellm` → Instance state →
+Start instance / Stop instance**.
+
+**What survives a stop:** the Elastic IP (so the URL and HTTPS certificate stay the same) and the
+disk (database, users, keys, config).
+
+**Cost while stopped:** about $0.25/day for the disk and IP, compared with about $0.60/day running.
+
+| What | Tool |
+|---|---|
+| Start / stop / check the server | AWS CLI (`aws ec2 ...`) or the EC2 console |
+| Create, change or delete infrastructure | Terraform (`terraform -chdir=terraform plan / apply / destroy`) |
+| Restart LiteLLM after a config or key change | `./reload.sh` / `./reload.sh --no-apply` (needs the server running) |
+
 ## Day-2 operations
 
 Run the [shell setup](#shell-setup-once-per-terminal) first.
@@ -344,7 +421,7 @@ Run the [shell setup](#shell-setup-once-per-terminal) first.
 | Turn public HTTPS off | `public_https = false`, then `./reload.sh`. This closes 80/443; access is then `http://<ip>:4000` from `allowed_cidrs` only. |
 | Change the cost alert | Edit `monthly_budget_usd` / `budget_alert_email`, then `terraform -chdir=terraform apply` |
 | Bigger instance | `instance_type = "t4g.medium"`, then `terraform -chdir=terraform apply`. It stops, resizes and starts (a few minutes of downtime). Switching ARM ↔ x86 changes the AMI and **replaces** the instance, so snapshot first. |
-| Stop the server to save money | `aws ec2 stop-instances --instance-ids $ID`. Start: `aws ec2 start-instances --instance-ids $ID`. The disk and IP are still billed (about $7/mo). |
+| Start / stop the server | See [Start and stop the server](#start-and-stop-the-server) |
 
 ---
 
@@ -357,6 +434,8 @@ Run the [shell setup](#shell-setup-once-per-terminal) first.
 | `401` from the API | Wrong or missing key: `Authorization: Bearer <key>`. |
 | Model returns `RateLimitError` / `429` | A free tier is exhausted. LiteLLM falls back automatically, but if every provider in a tier is out, wait or add a paid provider. |
 | `AuthenticationError` for a provider | Its key is missing or wrong. Run `./set-secret.sh <KEY>`, then `./reload.sh --no-apply`. |
+| `Your session has expired. Please reauthenticate using 'aws login'` / `ExpiredToken` | Your `aws login` session timed out. Run `source ./login.sh` and retry. |
+| `InvalidInstanceID.NotFound` / `ResourceNotFoundException` / Terraform wants to **create** everything again | You're signed in to the **wrong account**. Run the account check from [Step 3](#step-3--sign-in-to-aws); sign out of the console, `aws login` again and pick **Console Dot Dream** (`985040258825`). |
 | `Unable to locate credentials` / Terraform `No valid credential sources` | Run `aws login`, then `eval "$(aws configure export-credentials --format env)"`. |
 | `UnauthorizedOperation ... service control policy` | The Region isn't allowed. See [Step 3](#step-3--sign-in-to-aws). |
 | EC2 `InvalidParameterCombination ... not eligible for Free Tier` | The account is on the Free plan. Use a Free Tier type (t4g.small, t3.small, c7i-flex.large, m7i-flex.large). |
@@ -400,6 +479,8 @@ Compute only, in `ap-south-1`, running 24/7.
 ## Tear down
 
 ```bash
+aws login --region ap-south-1
+[ "$(aws sts get-caller-identity --query Account --output text)" = 985040258825 ] && echo "OK: project account" || echo "WRONG ACCOUNT: run aws login again and pick Console Dot Dream"
 eval "$(aws configure export-credentials --format env)"
 terraform -chdir=terraform destroy
 ```
@@ -407,8 +488,8 @@ terraform -chdir=terraform destroy
 Secrets go into a 7-day recovery window. Snapshots made by DLM are kept until you delete them:
 
 ```bash
-aws ec2 describe-snapshots --owner-ids self --filters Name=tag:Backup,Values=litellm --query 'Snapshots[].SnapshotId' --output text \
-  | xargs -n1 aws ec2 delete-snapshot --snapshot-id
+aws ec2 describe-snapshots --region ap-south-1 --owner-ids self --filters Name=tag:Backup,Values=litellm \
+  --query 'Snapshots[].SnapshotId' --output text | xargs -n1 aws ec2 delete-snapshot --region ap-south-1 --snapshot-id
 ```
 
 ---
@@ -425,6 +506,7 @@ aws ec2 describe-snapshots --owner-ids self --filters Name=tag:Backup,Values=lit
 | `app/Caddyfile` | HTTPS reverse proxy to `litellm:4000` |
 | `host/user-data.sh.tftpl` | First boot: swap, Docker, Compose, systemd unit |
 | `host/litellm-up` | Runs on every boot and reload: S3 sync, `.env` from Secrets Manager, compose up |
+| `login.sh` | `source ./login.sh`: sign in, check the account, export credentials, `ID`, `URL` |
 | `set-secret.sh` / `reload.sh` / `new-key.sh` | Store a provider key / apply and restart / create a per-user key |
 
 ### Validate changes

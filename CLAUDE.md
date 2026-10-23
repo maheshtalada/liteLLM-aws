@@ -12,6 +12,7 @@ Full runbook: README.md.
 - `app/docker-compose.yml` — stack that runs on the host in /opt/litellm
 - `host/user-data.sh.tftpl` — first-boot install (Docker, Compose, systemd unit)
 - `host/litellm-up` — runs on every boot / reload: S3 sync → render .env from Secrets Manager → compose up
+- `login.sh` — `source ./login.sh`: aws login if expired, refuse any account but 985040258825, export creds/AWS_REGION/ID/URL.
 - `set-secret.sh` — store a provider key (prompted, hidden). `reload.sh` — apply + restart via SSM.
 - `new-key.sh` — per-user virtual key (user + team) for usage tracking. The user runs it; it prints the
   new key once, so don't run it yourself and capture the key in chat.
