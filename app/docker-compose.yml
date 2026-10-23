@@ -48,7 +48,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: litellm-redis
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Memory-only cache; capped so it can't crowd out LiteLLM/Postgres on a 2 GiB instance (oldest entries evicted first)
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     restart: unless-stopped
 
   # Public HTTPS (only when public_https = true; litellm-up sets COMPOSE_PROFILES=https)

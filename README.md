@@ -12,6 +12,16 @@ Each person gets their own key; usage is tracked per person.
 
 Full details (architecture, AWS console map, every command, troubleshooting): **[docs/reference.md](docs/reference.md)**
 
+### Current status (2026-10-23)
+
+| Item | Status |
+|---|---|
+| Server, HTTPS, admin UI, per-user keys | ✅ working |
+| Bedrock: Nova, DeepSeek, Qwen, Kimi | ✅ tested through the gateway |
+| Bedrock: Claude (`claude-*`, and Claude inside `bedrock-*`) | ⏳ needs the one-time Anthropic form (see [step 5](#first-time-setup)) |
+| Free models (`lite`, `base`, `complex`) | ⏳ need at least one provider key, e.g. `./set-secret.sh GEMINI_API_KEY` |
+| Student keys | ⏳ not created yet (see [Keys for a class or team](#keys-for-a-class-or-team)) |
+
 ---
 
 ## Everyday use
@@ -53,13 +63,26 @@ Never share the master key, or paste any key into chat or git.
 
 ## Using the gateway
 
-Give each user their key and this base URL. Any OpenAI-compatible client works:
+Give each user their key and this base URL. Any OpenAI-compatible client works (OpenAI SDK, LangChain,
+LlamaIndex, Open WebUI, VS Code extensions such as Continue). The easiest setup is two environment
+variables, in the terminal or in `~/.zshrc`:
+
+```bash
+export OPENAI_BASE_URL="https://3-111-59-142.sslip.io"
+export OPENAI_API_KEY="sk-...their own key..."
+```
 
 ```python
 from openai import OpenAI
-client = OpenAI(base_url="https://3-111-59-142.sslip.io", api_key="sk-...")
+client = OpenAI()                                    # reads the two variables above
 r = client.chat.completions.create(model="base", messages=[{"role": "user", "content": "Hello"}])
 print(r.choices[0].message.content)
+```
+
+List the models a key may use (opening the URL in a browser gives `401`, because a browser can't send the key):
+
+```bash
+curl -s $OPENAI_BASE_URL/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | jq -r '.data[].id'
 ```
 
 | Free model | Paid model (Bedrock) | Use for |
@@ -78,6 +101,42 @@ Each name spreads requests across several models and falls back automatically wh
 
 ---
 
+## How keys work
+
+| | Student key (`sk-…`) | Provider key (Gemini, Groq…) |
+|---|---|---|
+| Who has it | One per student | Only the server (Secrets Manager); nobody sees it |
+| Created with | `new-key.sh` | Provider sign-up, then `set-secret.sh` |
+| Limits | Yours: models, budget, requests/min, expiry | The provider's: e.g. Groq ~1,000 requests/day, shared by **all** students |
+| Who pays | Nobody directly; it counts usage | The provider bills **you** (free tiers $0; Bedrock goes on your AWS bill) |
+| If leaked | Delete that one key | Rotate with `set-secret.sh`; student keys keep working |
+
+A student's request goes: student key checked (model allowed, budget, rate) → LiteLLM picks a model →
+calls the provider with **your** provider key → records usage against the student key. Bedrock needs
+no provider key; the server's AWS role is the credential.
+
+---
+
+## Limits and 429 errors
+
+| What ran out | What the student sees | Fix |
+|---|---|---|
+| Student's budget (`--budget`) | `Budget has been exceeded` | Use `--budget-duration 1d` so it resets automatically, or raise it in UI → Virtual Keys → Edit |
+| Student's rate limit (`--rpm` / `--tpm`) | `429` for that key | Clears within a minute; the OpenAI SDK retries (`OpenAI(max_retries=5)`) |
+| A provider's free quota | `429 RateLimitError` | LiteLLM retries, parks that model for 60 s, uses the other models in the tier, then falls back `base → lite → complex`. Add more provider keys to widen the pool. |
+
+**Response cache (on):** identical requests within 1 hour are answered from Redis without calling the
+provider, which saves quota and money when a class runs the same exercise. Cached answers come back in
+about 0.2 s. To skip the cache for one request (e.g. to get a fresh random answer):
+
+```python
+client.chat.completions.create(model="base", messages=[...], extra_body={"cache": {"no-cache": True}})
+```
+
+Where to look: UI → **Logs** (which model or provider failed) and **Usage** (who used what).
+
+---
+
 ## Keys for a class or team
 
 Create everyone's keys in one command, from a list, a CSV or Excel file, or a Google Sheet:
@@ -92,7 +151,14 @@ Create everyone's keys in one command, from a list, a CSV or Excel file, or a Go
 
 **File format (CSV or Excel):** email in column A, and optionally a per-student budget in column B
 that overrides `--budget`. Header rows, blank lines, invalid entries and duplicates are skipped. For an
-old `.xls` file, save it as `.xlsx` or CSV first.
+old `.xls` file, save it as `.xlsx` or CSV first. Example `students.csv`:
+
+```csv
+email,budget
+priya@college.edu,
+arjun@college.edu,5
+meera@college.edu,
+```
 
 **Google Sheets:** `--sheet` reads the tab in the link, but only if the sheet is shared as **"Anyone
 with the link: Viewer"**. That means anyone who gets the link can see the emails. To keep the sheet
@@ -114,6 +180,10 @@ git-ignored):
 
 Send each student only their own message, by direct message or email, never in a group chat. Then
 delete the files. Students never see the provider keys; those stay on the server.
+
+**Tell students:** the key is personal (usage counts against *their* budget); never commit it to git or
+paste it into shared documents (use the environment variable); don't send confidential data to the free
+models; and report a leaked key so it can be replaced.
 
 To manage keys later, use UI → **Virtual Keys** (edit limits, delete a key) and **Usage** (spend per student).
 To replace a lost key, delete the old one and run `./new-key.sh` again for that student.
@@ -212,7 +282,10 @@ More fixes are in [docs/reference.md](docs/reference.md#troubleshooting).
 ```bash
 source ./login.sh
 terraform -chdir=terraform destroy
+rm -rf keys/                      # any leftover student key files
 ```
+
+Daily disk snapshots are kept after a destroy; delete them as shown in [docs/reference.md](docs/reference.md#tear-down).
 
 ---
 
@@ -220,8 +293,11 @@ terraform -chdir=terraform destroy
 
 | Path | What |
 |---|---|
-| `app/config.yaml` | Which models are in `lite` / `base` / `complex` |
+| `app/config.yaml` | Model names: free `lite` / `base` / `complex`, paid `bedrock-*` / `claude-*` |
 | `terraform/` | AWS infrastructure; settings in `terraform.tfvars` (not in git) |
 | `host/` | Scripts that run on the server at boot |
-| `login.sh` · `set-secret.sh` · `reload.sh` · `new-key.sh` | Sign in · store a key · restart · create a user key |
+| `login.sh` | `source ./login.sh`: sign in, check the account, set `$ID` and `$URL` |
+| `set-secret.sh` · `reload.sh` | Store a provider key · apply config and restart LiteLLM |
+| `new-key.sh` | Create user keys: one person, or a class from a list / CSV / Excel / Google Sheet |
+| `keys/` | Generated student key files (git-ignored; delete after sending) |
 | `docs/reference.md` | Full reference |

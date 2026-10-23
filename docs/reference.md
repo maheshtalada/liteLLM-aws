@@ -265,6 +265,15 @@ deployment in that tier. When a deployment fails twice, it cools down for 60 s. 
 | `base` | general chat and writing (the default) | Gemini 3.8 Flash, Groq gpt-oss-120b, Qwen 3.8 27B, GLM-4.7-Flash, MiniMax M3.1 Flash, Gemma 4 31B |
 | `complex` | reasoning, coding, long documents | Gemini 2.5 Pro, Nemotron 3 Ultra, Inkling, Laguna S 2.1, Cohere Command A |
 
+### Response cache
+
+`litellm_settings.cache` in `app/config.yaml` stores responses in the Redis container for 1 hour
+(`ttl: 3600`). The cache key is the model name + messages + parameters, so only identical requests hit
+it. Redis runs memory-only, capped at 128 MB with `allkeys-lru` eviction (`app/docker-compose.yml`).
+Clients bypass it per request with `extra_body={"cache": {"no-cache": True}}`. A cache hit returns an
+`x-litellm-cache-key` response header. Tested on 2026-10-23: a repeated request took 0.17 s instead of
+1.5 s. To turn it off, set `cache: false`, then run `./reload.sh`.
+
 ### Paid models: Amazon Bedrock
 
 These are used only when a client asks for one of these names; the free tiers never fall back to

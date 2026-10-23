@@ -189,6 +189,16 @@ router_settings:
 litellm_settings:
   drop_params: true
   request_timeout: 120
+  # Response cache in Redis: an identical request (same model name, messages and parameters) within
+  # the TTL is answered from the cache, without calling the provider. That saves free-tier quota and
+  # Bedrock money when a class runs the same exercise. Clients can skip the cache per request with
+  #   extra_body={"cache": {"no-cache": True}}
+  cache: true
+  cache_params:
+    type: redis
+    host: os.environ/REDIS_HOST
+    port: os.environ/REDIS_PORT
+    ttl: 3600            # seconds (1 hour)
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
