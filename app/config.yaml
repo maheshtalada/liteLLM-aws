@@ -1,4 +1,4 @@
-# LiteLLM config — free-tier models only, grouped into three tiers.
+# LiteLLM config — free-tier models in three tiers, plus paid Amazon Bedrock models under separate names.
 #
 # Clients call one of three model names; LiteLLM load-balances across every deployment that
 # shares the name, so each provider's free rate limit is spread out:
@@ -14,7 +14,16 @@
 #   OpenRouter https://openrouter.ai/models?max_price=0           (":free" IDs)
 #   Z.AI (GLM) https://docs.z.ai/guides/overview/pricing           (Flash models)
 #   Cohere     https://docs.cohere.com/docs/rate-limits            (trial: 1,000 calls/month)
-# Paid models (Bedrock, Anthropic, OpenAI, Azure) were removed for now — see git history.
+#
+# Bedrock (PAID, pay per token) is only used when a client asks for a bedrock-* or claude-* name;
+# the free tiers never fall back to it. No API key: the EC2 instance role authenticates.
+#   bedrock-lite     cheap        Nova Lite, Claude Haiku 4.5
+#   bedrock-base     medium       Claude Sonnet 4.6, Nova Pro, DeepSeek V3.2
+#   bedrock-complex  highest      Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3
+#   claude-haiku-4-5 / claude-sonnet-4-6 / claude-opus-4-5   that exact Claude model
+# Model IDs callable from ap-south-1 (in.* = stays in India, apac.* = Asia-Pacific, global.* = any Region):
+#   aws bedrock list-inference-profiles --region ap-south-1 --query 'inferenceProfileSummaries[].inferenceProfileId'
+# Not yet enabled for this account (AccessDenied): Claude Sonnet/Opus 5.x, Haiku 5.5, Opus 4.8, GPT-5.x, GLM-5.3.
 
 model_list:
   # ================================ lite ==================================
@@ -99,6 +108,66 @@ model_list:
       api_key: os.environ/COHERE_API_KEY
       rpm: 20
 
+  # ====================== Amazon Bedrock (PAID) ======================
+  # bedrock-lite
+  - model_name: bedrock-lite
+    litellm_params:
+      model: bedrock/apac.amazon.nova-lite-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-lite
+    litellm_params:
+      model: bedrock/in.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # bedrock-base
+  - model_name: bedrock-base
+    litellm_params:
+      model: bedrock/global.anthropic.claude-sonnet-4-6
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-base
+    litellm_params:
+      model: bedrock/apac.amazon.nova-pro-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-base
+    litellm_params:
+      model: bedrock/deepseek.v3.2
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # bedrock-complex
+  - model_name: bedrock-complex
+    litellm_params:
+      model: bedrock/global.anthropic.claude-opus-4-5-20251101-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-complex
+    litellm_params:
+      model: bedrock/qwen.qwen3-coder-480b-a35b-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: bedrock-complex
+    litellm_params:
+      model: bedrock/in.moonshotai.kimi-k3                # reasoning model
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  # Exact Claude models by name
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: bedrock/in.anthropic.claude-haiku-4-5-20251001-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: bedrock/global.anthropic.claude-sonnet-4-6
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: claude-opus-4-5
+    litellm_params:
+      model: bedrock/global.anthropic.claude-opus-4-5-20251101-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
 router_settings:
   routing_strategy: simple-shuffle
   num_retries: 2
@@ -112,6 +181,10 @@ router_settings:
     - lite: ["base"]
     - base: ["lite", "complex"]
     - complex: ["base"]
+    # Paid tiers only fall back to other paid tiers (never the other way round)
+    - bedrock-lite: ["bedrock-base"]
+    - bedrock-base: ["bedrock-lite"]
+    - bedrock-complex: ["bedrock-base"]
 
 litellm_settings:
   drop_params: true

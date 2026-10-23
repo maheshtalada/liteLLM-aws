@@ -6,9 +6,9 @@ Each person gets their own key; usage is tracked per person.
 | | |
 |---|---|
 | **URL** | `https://3-111-59-142.sslip.io` (admin UI: `/ui`) |
-| **Models** | `lite`, `base`, `complex` (free tiers of Gemini, Groq, OpenRouter, Z.AI GLM, Cohere) |
+| **Models** | Free: `lite`, `base`, `complex` · Paid (Amazon Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
 | **Server** | EC2 `t4g.small` in `ap-south-1`, account **985040258825** (Console Dot Dream) |
-| **Cost** | about $18–20/month for AWS; the models are free |
+| **Cost** | about $18–20/month for the server; free models cost $0, Bedrock models are billed per token |
 
 Full details (architecture, AWS console map, every command, troubleshooting): **[docs/reference.md](docs/reference.md)**
 
@@ -61,14 +61,19 @@ r = client.chat.completions.create(model="base", messages=[{"role": "user", "con
 print(r.choices[0].message.content)
 ```
 
-| Model | Use for |
-|---|---|
-| `lite` | quick, simple tasks |
-| `base` | general chat and writing (default) |
-| `complex` | reasoning, coding, long documents |
+| Free model | Paid model (Bedrock) | Use for |
+|---|---|---|
+| `lite` | `bedrock-lite` (Nova Lite, Claude Haiku 4.5) | quick, simple tasks |
+| `base` | `bedrock-base` (Claude Sonnet 4.6, Nova Pro, DeepSeek V3.2) | general chat and writing (default) |
+| `complex` | `bedrock-complex` (Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3) | reasoning, coding, long documents |
+| | `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` | that exact Claude model |
 
-Each name spreads requests across several free models and falls back automatically when one is busy.
-Free tiers are shared by everyone and may use prompts for training, so don't send confidential data.
+Each name spreads requests across several models and falls back automatically when one is busy.
+
+- **Free models:** shared by everyone and may use prompts for training, so don't send confidential data.
+- **Bedrock models:** cost money per token, but your data stays within AWS. They are used **only** when a
+  client asks for them; free models never fall back to Bedrock. Leave them off student keys, or give
+  those keys a dollar budget.
 
 ---
 
@@ -135,6 +140,10 @@ Get free keys and store each one. You type the key at a hidden prompt.
 ./reload.sh --no-apply
 ```
 
+**Bedrock (paid models):** no key needed. For Claude, submit the one-time Anthropic use-case form:
+in the Bedrock console (Mumbai), go to **Model catalog**, open any Claude model and **submit use case
+details**. It takes effect in about 15 minutes.
+
 **6. Give people keys:** `./new-key.sh <email> <team> [budget]`. The key is shown once; send it privately.
 
 ---
@@ -148,6 +157,7 @@ Get free keys and store each one. You type the key at a hidden prompt.
 | Site doesn't load | The server may be stopped: `aws ec2 start-instances --instance-ids $ID`, wait 2 min |
 | `401` from the API | Missing or wrong key in `Authorization: Bearer <key>` |
 | `429` / rate limit | A free tier is used up. Wait, or add another provider key. |
+| `Model use case details have not been submitted` | Submit the Anthropic form in the Bedrock console (see step 5), then wait 15 min |
 
 More fixes are in [docs/reference.md](docs/reference.md#troubleshooting).
 

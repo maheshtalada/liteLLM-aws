@@ -265,6 +265,40 @@ deployment in that tier. When a deployment fails twice, it cools down for 60 s. 
 | `base` | general chat and writing (the default) | Gemini 3.8 Flash, Groq gpt-oss-120b, Qwen 3.8 27B, GLM-4.7-Flash, MiniMax M3.1 Flash, Gemma 4 31B |
 | `complex` | reasoning, coding, long documents | Gemini 2.5 Pro, Nemotron 3 Ultra, Inkling, Laguna S 2.1, Cohere Command A |
 
+### Paid models: Amazon Bedrock
+
+These are used only when a client asks for one of these names; the free tiers never fall back to
+them. There's no API key: the EC2 instance role calls Bedrock (`bedrock:InvokeModel*` in
+`terraform/main.tf`). They're billed per token on your AWS bill, and LiteLLM records the cost per key,
+so key budgets are real dollar limits here. Fallbacks: `bedrock-lite ↔ bedrock-base`,
+`bedrock-complex → bedrock-base`.
+
+| Name | Deployments | Inference ID (data location) |
+|---|---|---|
+| `bedrock-lite` | Amazon Nova Lite, Claude Haiku 4.5 | `apac.amazon.nova-lite-v1:0` (APAC), `in.anthropic.claude-haiku-4-5-20251001-v1:0` (India) |
+| `bedrock-base` | Claude Sonnet 4.6, Nova Pro, DeepSeek V3.2 | `global.anthropic.claude-sonnet-4-6` (global), `apac.amazon.nova-pro-v1:0`, `deepseek.v3.2` (Mumbai) |
+| `bedrock-complex` | Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3 | `global.anthropic.claude-opus-4-5-20251101-v1:0`, `qwen.qwen3-coder-480b-a35b-v1:0` (Mumbai), `in.moonshotai.kimi-k3` (India) |
+| `claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-5` | that exact Claude model | as above |
+
+Find what your account can call, and test one model (about 5 tokens):
+
+```bash
+aws bedrock list-inference-profiles --query 'inferenceProfileSummaries[].inferenceProfileId'
+aws bedrock list-foundation-models --by-inference-type ON_DEMAND --query 'modelSummaries[].modelId'
+aws bedrock-runtime converse --model-id in.anthropic.claude-haiku-4-5-20251001-v1:0 \
+  --messages '[{"role":"user","content":[{"text":"Say OK"}]}]' --inference-config '{"maxTokens":5}'
+```
+
+**Claude needs a one-time form:** `Model use case details have not been submitted for this account`
+means you must open the Bedrock console (Mumbai), go to **Model catalog**, open any Anthropic Claude
+model and submit the use-case details. It takes effect in about 15 minutes. Until then, `bedrock-*`
+requests that land on Claude fall back to Nova or DeepSeek, and `claude-*` names fail.
+
+`AccessDeniedException ... is not available for this account` means AWS hasn't enabled that model for
+your account yet. As of 2026-10-23 this applies to Claude Sonnet/Opus 5.x, Haiku 5.5, Opus 4.8,
+GPT-5.x and GLM-5.3. Request access from the Bedrock console or AWS Support, then add the model to
+`app/config.yaml` and run `./reload.sh`.
+
 Free tiers are rate-limited and **shared by every user of the gateway**, and providers may use the
 prompts for training. Don't send confidential data. Free model lists change often; the links to
 check are at the top of `app/config.yaml`. To add Bedrock or paid providers later, add entries to
