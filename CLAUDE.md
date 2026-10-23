@@ -3,7 +3,7 @@
 This repo deploys a LiteLLM gateway on one EC2 instance (Amazon Linux 2023, docker compose:
 LiteLLM + Postgres + Redis). Bedrock is called through the instance IAM role; external providers
 (Anthropic, OpenAI, Azure OpenAI, Gemini, Groq, Cohere) use keys stored in AWS Secrets Manager.
-Full runbook: README.md.
+Short guide: README.md. Full runbook (every command, console map, troubleshooting): docs/reference.md.
 
 ## Layout
 
@@ -34,7 +34,7 @@ Full runbook: README.md.
 4. `terraform -chdir=terraform init` → `terraform -chdir=terraform plan` → show the user a short summary of the plan → **ask before `terraform apply`**.
 5. **Provider keys** — tell the user to run `./set-secret.sh <KEY>` themselves in a terminal for each provider
    (it prompts with hidden input). Then run `./reload.sh --no-apply`.
-6. **Verify** with the curl commands in README.md "Verify" (one Bedrock model, one external model).
+6. **Verify** with the curl commands in docs/reference.md "Step 7 — Verify" (one Bedrock model, one external model).
    If the host isn't ready, wait — first boot takes 3–5 minutes after apply.
 
 ## Debugging
