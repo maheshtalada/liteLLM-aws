@@ -6,7 +6,7 @@ Each person gets their own key; usage is tracked per person.
 | | |
 |---|---|
 | **URL** | `https://3-111-59-142.sslip.io` (admin UI: `/ui`) |
-| **Models** | Free: `lite`, `base`, `complex` (with automatic paid fallback when free quota runs out) · Paid on request (Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
+| **Models** | Free (Gemini): `lite`, `base`, `complex` (with automatic paid fallback when free quota runs out) · Paid on request (Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
 | **Server** | EC2 `t4g.small` in `ap-south-1`, account **985040258825** (Console Dot Dream) |
 | **Cost** | about $18–20/month for the server; free models cost $0, Bedrock models are billed per token |
 
@@ -19,7 +19,7 @@ Full details (architecture, AWS console map, every command, troubleshooting): **
 | Server, HTTPS, admin UI, per-user keys | ✅ working |
 | Bedrock: Nova, DeepSeek, Qwen, Kimi | ✅ tested through the gateway |
 | Bedrock: Claude (`claude-*`, and Claude inside `bedrock-*`) | ⏳ needs the one-time Anthropic form (see [step 5](#first-time-setup)) |
-| Free models (`lite`, `base`, `complex`) | ⏳ need at least one provider key, e.g. `./set-secret.sh GEMINI_API_KEY`. Until then requests are answered by the **paid fallback** (tested OK). |
+| Free models (`lite`, `base`, `complex`) | ✅ **Gemini only** for now (key stored; all 6 Gemini deployments healthy, answered at $0). Groq, OpenRouter, Z.AI and Cohere entries are commented out in `app/config.yaml` until their keys are added. |
 | Paid fallback (`lite-paid`, `base-paid`, `complex-paid`) | ✅ Bedrock part working; OpenRouter part needs credit + `OPENROUTER_API_KEY` |
 | Student keys | ⏳ not created yet (see [Keys for a class or team](#keys-for-a-class-or-team)) |
 
@@ -99,7 +99,9 @@ curl -s $OPENAI_BASE_URL/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | 
 | `complex` | `bedrock-complex` (Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3) | reasoning, coding, long documents |
 | | `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` | that exact Claude model |
 
-Each name spreads requests across several models and falls back automatically when one is busy.
+Free models right now (Gemini only): `lite` = Gemini 3.5 Flash-Lite, 3.1 Flash-Lite; `base` = Gemini 3.6
+Flash, 3.5 Flash; `complex` = Gemini 3.6 Flash, 3 Flash Preview. Each name spreads requests across its
+models and falls back automatically when one is busy.
 
 - **Free models:** shared by everyone and may use prompts for training, so don't send confidential data.
 - **Bedrock models:** cost money per token, but your data stays within AWS. They are used **only** when a

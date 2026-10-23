@@ -30,7 +30,9 @@
 # Not yet enabled for this account (AccessDenied): Claude Sonnet/Opus 5.x, Haiku 5.5, Opus 4.8, GPT-5.x, GLM-5.3.
 
 model_list:
-  # ================================ lite ==================================
+  # ===== Free tiers — Gemini only for now (tested 2026-10-23 with the stored key) =====
+  # Not used: gemini-3.8-flash / 3.7-flash (hang >60 s), gemini-2.5-pro / 2.5-flash ("no longer available to new
+  # users"), gemini-pro-latest (not free). When free Gemini is exhausted, requests fall back to *-paid below.
   - model_name: lite
     litellm_params:
       model: gemini/gemini-3.5-flash-lite
@@ -40,107 +42,132 @@ model_list:
 
   - model_name: lite
     litellm_params:
-      model: groq/openai/gpt-oss-20b
-      api_key: os.environ/GROQ_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-      rpm: 30
-
-  - model_name: lite
-    litellm_params:
-      model: zai/glm-4.5-flash                         # Zhipu (China)
-      api_key: os.environ/ZAI_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-
-  - model_name: lite
-    litellm_params:
-      model: openrouter/nvidia/nemotron-3.5-lightning:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-
-  # ================================ base ==================================
-  - model_name: base
-    litellm_params:
-      model: gemini/gemini-3.8-flash
+      model: gemini/gemini-3.1-flash-lite
       api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
   - model_name: base
     litellm_params:
-      model: groq/openai/gpt-oss-120b
-      api_key: os.environ/GROQ_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-      rpm: 30
-
-  - model_name: base
-    litellm_params:
-      model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
-      api_key: os.environ/GROQ_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-      rpm: 30
-
-  - model_name: base
-    litellm_params:
-      model: zai/glm-4.7-flash                         # Zhipu (China)
-      api_key: os.environ/ZAI_API_KEY
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
   - model_name: base
     litellm_params:
-      model: openrouter/minimax/minimax-m3.1-flash:free  # MiniMax (China)
-      api_key: os.environ/OPENROUTER_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-
-  - model_name: base
-    litellm_params:
-      model: openrouter/google/gemma-4-31b-it:free
-      api_key: os.environ/OPENROUTER_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-
-  # =============================== complex ================================
-  - model_name: complex
-    litellm_params:
-      model: gemini/gemini-2.5-pro
+      model: gemini/gemini-3.5-flash   # often 503 'high demand'; LiteLLM skips it while busy
       api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
-      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
-      api_key: os.environ/OPENROUTER_API_KEY
+      model: gemini/gemini-3.6-flash
+      api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
-      model: openrouter/thinkingmachines/inkling:free
-      api_key: os.environ/OPENROUTER_API_KEY
+      model: gemini/gemini-3-flash-preview
+      api_key: os.environ/GEMINI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
-  - model_name: complex
-    litellm_params:
-      model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
-      api_key: os.environ/OPENROUTER_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
+  # ===== Other free providers — disabled until their keys are stored (./set-secret.sh <NAME>) =====
+  # To re-enable: uncomment the block(s), then ./reload.sh
+  # - model_name: lite
+  #   litellm_params:
+  #     model: groq/openai/gpt-oss-20b
+  #     api_key: os.environ/GROQ_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+  #     rpm: 30
 
-  - model_name: complex
-    litellm_params:
-      model: cohere/command-a-03-2025                  # trial key: 1,000 calls/month
-      api_key: os.environ/COHERE_API_KEY
-      input_cost_per_token: 0          # free tier: never counts against budgets
-      output_cost_per_token: 0
-      rpm: 20
+  # - model_name: lite
+  #   litellm_params:
+  #     model: zai/glm-4.5-flash                         # Zhipu (China)
+  #     api_key: os.environ/ZAI_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: lite
+  #   litellm_params:
+  #     model: openrouter/nvidia/nemotron-3.5-lightning:free
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # # ================================ base ==================================
+
+  # - model_name: base
+  #   litellm_params:
+  #     model: groq/openai/gpt-oss-120b
+  #     api_key: os.environ/GROQ_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+  #     rpm: 30
+
+  # - model_name: base
+  #   litellm_params:
+  #     model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
+  #     api_key: os.environ/GROQ_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+  #     rpm: 30
+
+  # - model_name: base
+  #   litellm_params:
+  #     model: zai/glm-4.7-flash                         # Zhipu (China)
+  #     api_key: os.environ/ZAI_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: base
+  #   litellm_params:
+  #     model: openrouter/minimax/minimax-m3.1-flash:free  # MiniMax (China)
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: base
+  #   litellm_params:
+  #     model: openrouter/google/gemma-4-31b-it:free
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # # =============================== complex ================================
+
+  # - model_name: complex
+  #   litellm_params:
+  #     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: complex
+  #   litellm_params:
+  #     model: openrouter/thinkingmachines/inkling:free
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: complex
+  #   litellm_params:
+  #     model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+
+  # - model_name: complex
+  #   litellm_params:
+  #     model: cohere/command-a-03-2025                  # trial key: 1,000 calls/month
+  #     api_key: os.environ/COHERE_API_KEY
+  #     input_cost_per_token: 0          # free tier: never counts against budgets
+  #     output_cost_per_token: 0
+  #     rpm: 20
 
   # ====================== Amazon Bedrock (PAID) ======================
   # bedrock-lite

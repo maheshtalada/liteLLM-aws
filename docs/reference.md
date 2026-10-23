@@ -259,6 +259,18 @@ Clients send `"model": "lite"`, `"base"` or `"complex"`. Each name load-balances
 deployment in that tier. When a deployment fails twice, it cools down for 60 s. Fallbacks:
 `lite → base`, `base → lite → complex`, `complex → base`.
 
+**Current (2026-10-23): Gemini only.** Only `GEMINI_API_KEY` is stored, so the free tiers use:
+`lite` = gemini-3.5-flash-lite, gemini-3.1-flash-lite; `base` = gemini-3.6-flash, gemini-3.5-flash;
+`complex` = gemini-3.6-flash, gemini-3-flash-preview. All are healthy and answered at $0.
+
+Not used: gemini-3.8-flash and 3.7-flash hang for more than 60 s; gemini-2.5-pro and 2.5-flash return "no
+longer available to new users"; gemini-pro-latest returns 429 (not on the free tier). The other providers'
+entries are commented out in `app/config.yaml`. Uncomment them after `./set-secret.sh <KEY>`, then run
+`./reload.sh`. The table below is the full design once all providers have keys.
+
+To list the Gemini models your key can call (this runs on the host, so the key isn't printed):
+`aws ssm send-command --instance-ids $ID --document-name AWS-RunShellScript --parameters '{"commands":["set -a; . /opt/litellm/.env; set +a; curl -s -H \"x-goog-api-key: $GEMINI_API_KEY\" https://generativelanguage.googleapis.com/v1beta/models | jq -r .models[].name"]}'`
+
 | Tier | Use for | Deployments (`app/config.yaml`) |
 |---|---|---|
 | `lite` | classification, extraction, short answers | Gemini 3.5 Flash-Lite, Groq gpt-oss-20b, GLM-4.5-Flash, Nemotron 3.5 Lightning |
