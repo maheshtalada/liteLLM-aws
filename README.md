@@ -6,7 +6,7 @@ Each person gets their own key; usage is tracked per person.
 | | |
 |---|---|
 | **URL** | `https://3-111-59-142.sslip.io` (admin UI: `/ui`) |
-| **Models** | Free: `lite`, `base`, `complex` · Paid (Amazon Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
+| **Models** | Free: `lite`, `base`, `complex` (with automatic paid fallback when free quota runs out) · Paid on request (Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
 | **Server** | EC2 `t4g.small` in `ap-south-1`, account **985040258825** (Console Dot Dream) |
 | **Cost** | about $18–20/month for the server; free models cost $0, Bedrock models are billed per token |
 
@@ -19,7 +19,8 @@ Full details (architecture, AWS console map, every command, troubleshooting): **
 | Server, HTTPS, admin UI, per-user keys | ✅ working |
 | Bedrock: Nova, DeepSeek, Qwen, Kimi | ✅ tested through the gateway |
 | Bedrock: Claude (`claude-*`, and Claude inside `bedrock-*`) | ⏳ needs the one-time Anthropic form (see [step 5](#first-time-setup)) |
-| Free models (`lite`, `base`, `complex`) | ⏳ need at least one provider key, e.g. `./set-secret.sh GEMINI_API_KEY` |
+| Free models (`lite`, `base`, `complex`) | ⏳ need at least one provider key, e.g. `./set-secret.sh GEMINI_API_KEY`. Until then requests are answered by the **paid fallback** (tested OK). |
+| Paid fallback (`lite-paid`, `base-paid`, `complex-paid`) | ✅ Bedrock part working; OpenRouter part needs credit + `OPENROUTER_API_KEY` |
 | Student keys | ⏳ not created yet (see [Keys for a class or team](#keys-for-a-class-or-team)) |
 
 ---
@@ -44,7 +45,7 @@ browser, then run it again and pick **Console Dot Dream**.
 | Check it's up | `curl -s $URL/health/liveliness` (prints `"I'm alive!"`) |
 | Add or change a provider key | `./set-secret.sh GEMINI_API_KEY`, then `./reload.sh --no-apply` |
 | Give someone a key | `./new-key.sh priya@example.com students 5` (email, team, USD budget) |
-| Give a whole class keys | `./new-key.sh --team students --file students.xlsx --models lite,base --budget 2` (see [below](#keys-for-a-class-or-team)) |
+| Give a whole class keys | `./new-key.sh --team students --file students.xlsx --models lite,base --budget 1 --budget-duration 30d` (see [below](#keys-for-a-class-or-team)) |
 | Change models | Edit `app/config.yaml`, then `./reload.sh` |
 | Restart LiteLLM | `./reload.sh --no-apply` |
 | See logs | `aws logs tail /litellm/litellm --follow` |
@@ -55,6 +56,12 @@ password is the master key. Copy it to your clipboard without displaying it:
 
 ```bash
 aws secretsmanager get-secret-value --secret-id litellm/LITELLM_MASTER_KEY --query SecretString --output text | tr -d '\n' | pbcopy
+```
+
+For the `curl` admin commands in this README, load it into a variable instead (never `echo` it):
+
+```bash
+MASTER=$(aws secretsmanager get-secret-value --secret-id litellm/LITELLM_MASTER_KEY --query SecretString --output text)
 ```
 
 Never share the master key, or paste any key into chat or git.
@@ -123,7 +130,30 @@ no provider key; the server's AWS role is the credential.
 |---|---|---|
 | Student's budget (`--budget`) | `Budget has been exceeded` | Use `--budget-duration 1d` so it resets automatically, or raise it in UI → Virtual Keys → Edit |
 | Student's rate limit (`--rpm` / `--tpm`) | `429` for that key | Clears within a minute; the OpenAI SDK retries (`OpenAI(max_retries=5)`) |
-| A provider's free quota | `429 RateLimitError` | LiteLLM retries, parks that model for 60 s, uses the other models in the tier, then falls back `base → lite → complex`. Add more provider keys to widen the pool. |
+| A provider's free quota | Usually nothing: the request is answered by a **paid fallback** | LiteLLM retries, parks that model for 60 s, uses the other free models, then answers from `lite-paid` / `base-paid` / `complex-paid` (see below). Add more provider keys to widen the free pool. |
+
+### When free quota runs out: paid fallback
+
+Students never wait for tomorrow's quota. When every free model in a tier is exhausted, the request is
+answered by the matching paid group. The student keeps asking for `lite` / `base` / `complex` and
+doesn't notice the switch:
+
+| Free tier | Paid fallback | Models (billed) |
+|---|---|---|
+| `lite` | `lite-paid` | Amazon Nova Lite (Bedrock), Qwen 3.7 Flash (OpenRouter) |
+| `base` | `base-paid` | Nova Pro, DeepSeek V3.2 (Bedrock), DeepSeek V4.1 Flash (OpenRouter) |
+| `complex` | `complex-paid` | Qwen3 Coder 480B, Kimi K3 (Bedrock), Qwen 3.7 Plus (OpenRouter) |
+
+- **Free usage costs $0 and never counts against budgets.** A key's `--budget` therefore measures **real
+  paid spend only**.
+- **Cap per student:** create keys with e.g. `--budget 1 --budget-duration 30d` ($1 of paid fallback per
+  student per month). The class total is automatically students × $1. When a student's budget is used
+  up, they get `Budget has been exceeded` until it resets; free models keep working once their quota is back.
+- **Billing:** Bedrock goes on your AWS bill. OpenRouter models need credit on your OpenRouter account;
+  without it, the Bedrock models in each group answer.
+- **Typical cost:** a short chat turn on Nova Lite costs about $0.000001. The 2026-10-23 test (13 input
+  + 2 output tokens) cost **$0.0000013**.
+- **Until free provider keys are stored, every request uses the paid fallback.** Add `GEMINI_API_KEY` etc. first.
 
 **Response cache (on):** identical requests within 1 hour are answered from Redis without calling the
 provider, which saves quota and money when a class runs the same exercise. Cached answers come back in
@@ -137,15 +167,46 @@ Where to look: UI → **Logs** (which model or provider failed) and **Usage** (w
 
 ---
 
+## Tracking usage and spend
+
+Free models count as $0, so **every dollar shown is real paid-fallback spend**. Open
+`https://3-111-59-142.sslip.io/ui` and log in as `admin` with the master key.
+
+| Page | Shows | Use it to |
+|---|---|---|
+| **Usage** | Spend and tokens over time, by key, team, model and model group | Daily totals, top students, how much went to `*-paid` |
+| **Virtual Keys** | Each key's spend vs. budget, reset period, limits, expiry | Spot students near their cap; raise or reset a budget |
+| **Logs** | One row per request: key, requested model, model that answered, tokens, cost, errors | Free (`$0`, e.g. `gemini/…`) vs. paid fallback (e.g. `apac.amazon.nova-lite-v1:0`, group `lite-paid`); find 429s |
+| **Teams** | Spend per team | The class total (`students`) |
+
+New requests appear within about a minute (spend is written in batches). Prompt and response text is
+not stored, only who, which model, tokens and cost. Cache hits show as `$0`.
+
+From the command line (after `source ./login.sh` and setting `MASTER` as in [Everyday use](#everyday-use)):
+
+```bash
+curl -s $URL/global/spend -H "Authorization: Bearer $MASTER" | jq .                          # everything
+curl -s "$URL/user/info?user_id=priya@college.edu" -H "Authorization: Bearer $MASTER" | jq '.user_info.spend'
+curl -s "$URL/team/info?team_id=students" -H "Authorization: Bearer $MASTER" | jq '.team_info.spend'
+```
+
+**Actual bills** (LiteLLM's numbers are estimates from list prices):
+
+- **AWS:** Billing and Cost Management → Cost Explorer, grouped by Service ("Amazon Bedrock"). It updates
+  daily. The $25 AWS Budget emails you if spend climbs.
+- **OpenRouter:** openrouter.ai → Activity.
+
+---
+
 ## Keys for a class or team
 
 Create everyone's keys in one command, from a list, a CSV or Excel file, or a Google Sheet:
 
 ```bash
-./new-key.sh --team students --emails "priya@college.edu, arjun@college.edu" --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
-./new-key.sh --team students --file students.csv  --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
-./new-key.sh --team students --file students.xlsx --models lite,base --budget 2 --budget-duration 1d --rpm 10 --expires 90d
-./new-key.sh --team students --sheet "https://docs.google.com/spreadsheets/d/<id>/edit#gid=0" --models lite,base --budget 2
+./new-key.sh --team students --emails "priya@college.edu, arjun@college.edu" --models lite,base --budget 1 --budget-duration 30d --rpm 10 --expires 90d
+./new-key.sh --team students --file students.csv  --models lite,base --budget 1 --budget-duration 30d --rpm 10 --expires 90d
+./new-key.sh --team students --file students.xlsx --models lite,base --budget 1 --budget-duration 30d --rpm 10 --expires 90d
+./new-key.sh --team students --sheet "https://docs.google.com/spreadsheets/d/<id>/edit#gid=0" --models lite,base --budget 1 --budget-duration 30d
 ./new-key.sh --team students --file students.csv --dry-run      # preview only; creates nothing
 ```
 
@@ -167,8 +228,8 @@ private, use **File → Download → Microsoft Excel (.xlsx)** and pass that fil
 | Option | Meaning | Suggested for students |
 |---|---|---|
 | `--models` | Models the key may use | `lite,base` (keeps paid Bedrock and the scarce `complex` models off) |
-| `--budget` | Spend cap per key, in USD | `2` (a usage cap on free models; real dollars on Bedrock) |
-| `--budget-duration` | Budget resets every… | `1d` |
+| `--budget` | Cap on **paid** spend per key, in USD (free models count as $0) | `1` |
+| `--budget-duration` | Budget resets every… | `30d` |
 | `--rpm` / `--tpm` | Requests / tokens per minute | `10` / `20000` (shares the free quotas fairly) |
 | `--expires` | Key stops working after… | `90d` (end of course) |
 
@@ -293,7 +354,7 @@ Daily disk snapshots are kept after a destroy; delete them as shown in [docs/ref
 
 | Path | What |
 |---|---|
-| `app/config.yaml` | Model names: free `lite` / `base` / `complex`, paid `bedrock-*` / `claude-*` |
+| `app/config.yaml` | Model names: free `lite` / `base` / `complex`, paid fallback `*-paid`, paid on request `bedrock-*` / `claude-*` |
 | `terraform/` | AWS infrastructure; settings in `terraform.tfvars` (not in git) |
 | `host/` | Scripts that run on the server at boot |
 | `login.sh` | `source ./login.sh`: sign in, check the account, set `$ID` and `$URL` |

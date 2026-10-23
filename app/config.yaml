@@ -15,8 +15,12 @@
 #   Z.AI (GLM) https://docs.z.ai/guides/overview/pricing           (Flash models)
 #   Cohere     https://docs.cohere.com/docs/rate-limits            (trial: 1,000 calls/month)
 #
-# Bedrock (PAID, pay per token) is only used when a client asks for a bedrock-* or claude-* name;
-# the free tiers never fall back to it. No API key: the EC2 instance role authenticates.
+# Free deployments are priced at $0 (input/output_cost_per_token: 0), so a key's budget only counts paid usage.
+# When the free tiers run out, they fall back to lite-paid / base-paid / complex-paid (Bedrock + OpenRouter
+# credits). That spend is real and capped by each key's budget (e.g. new-key.sh --budget 1 --budget-duration 30d).
+#
+# bedrock-* / claude-* names below are PAID and used only when a client asks for them by name.
+# Bedrock needs no API key: the EC2 instance role authenticates.
 #   bedrock-lite     cheap        Nova Lite, Claude Haiku 4.5
 #   bedrock-base     medium       Claude Sonnet 4.6, Nova Pro, DeepSeek V3.2
 #   bedrock-complex  highest      Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3
@@ -31,81 +35,111 @@ model_list:
     litellm_params:
       model: gemini/gemini-3.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: lite
     litellm_params:
       model: groq/openai/gpt-oss-20b
       api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
       rpm: 30
 
   - model_name: lite
     litellm_params:
       model: zai/glm-4.5-flash                         # Zhipu (China)
       api_key: os.environ/ZAI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: lite
     litellm_params:
       model: openrouter/nvidia/nemotron-3.5-lightning:free
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   # ================================ base ==================================
   - model_name: base
     litellm_params:
       model: gemini/gemini-3.8-flash
       api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: base
     litellm_params:
       model: groq/openai/gpt-oss-120b
       api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
       rpm: 30
 
   - model_name: base
     litellm_params:
       model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
       api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
       rpm: 30
 
   - model_name: base
     litellm_params:
       model: zai/glm-4.7-flash                         # Zhipu (China)
       api_key: os.environ/ZAI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: base
     litellm_params:
       model: openrouter/minimax/minimax-m3.1-flash:free  # MiniMax (China)
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: base
     litellm_params:
       model: openrouter/google/gemma-4-31b-it:free
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   # =============================== complex ================================
   - model_name: complex
     litellm_params:
       model: gemini/gemini-2.5-pro
       api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
       model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
       model: openrouter/thinkingmachines/inkling:free
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
       model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
       api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
       model: cohere/command-a-03-2025                  # trial key: 1,000 calls/month
       api_key: os.environ/COHERE_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
       rpm: 20
 
   # ====================== Amazon Bedrock (PAID) ======================
@@ -168,6 +202,48 @@ model_list:
       model: bedrock/global.anthropic.claude-opus-4-5-20251101-v1:0
       aws_region_name: os.environ/AWS_REGION_NAME
 
+  # ============ Paid fallback for the free tiers (used only when free quota runs out) ============
+  # Same idea as lite/base/complex, but billed: Bedrock on the AWS bill, OpenRouter from its credits.
+  - model_name: lite-paid
+    litellm_params:
+      model: bedrock/apac.amazon.nova-lite-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: lite-paid
+    litellm_params:
+      model: openrouter/qwen/qwen3.7-flash          # ~$0.03 / $0.13 per M tokens
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: base-paid
+    litellm_params:
+      model: bedrock/apac.amazon.nova-pro-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: base-paid
+    litellm_params:
+      model: bedrock/deepseek.v3.2
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: base-paid
+    litellm_params:
+      model: openrouter/deepseek/deepseek-v4.1-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: complex-paid
+    litellm_params:
+      model: bedrock/qwen.qwen3-coder-480b-a35b-v1:0
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: complex-paid
+    litellm_params:
+      model: bedrock/in.moonshotai.kimi-k3
+      aws_region_name: os.environ/AWS_REGION_NAME
+
+  - model_name: complex-paid
+    litellm_params:
+      model: openrouter/qwen/qwen3.7-plus
+      api_key: os.environ/OPENROUTER_API_KEY
+
 router_settings:
   routing_strategy: simple-shuffle
   num_retries: 2
@@ -177,10 +253,15 @@ router_settings:
   # Free deployments hit rate limits often: cool a failing one down, then fall back across tiers
   allowed_fails: 2
   cooldown_time: 60
+  # Free tiers first; when every free model is out of quota, the matching *-paid group answers,
+  # so students don't wait for the next day. Paid spend counts against each student key's budget.
   fallbacks:
-    - lite: ["base"]
-    - base: ["lite", "complex"]
-    - complex: ["base"]
+    - lite: ["base", "lite-paid"]
+    - base: ["lite", "complex", "base-paid"]
+    - complex: ["base", "complex-paid"]
+    - lite-paid: ["base-paid"]
+    - base-paid: ["lite-paid"]
+    - complex-paid: ["base-paid"]
     # Paid tiers only fall back to other paid tiers (never the other way round)
     - bedrock-lite: ["bedrock-base"]
     - bedrock-base: ["bedrock-lite"]

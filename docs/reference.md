@@ -265,6 +265,27 @@ deployment in that tier. When a deployment fails twice, it cools down for 60 s. 
 | `base` | general chat and writing (the default) | Gemini 3.8 Flash, Groq gpt-oss-120b, Qwen 3.8 27B, GLM-4.7-Flash, MiniMax M3.1 Flash, Gemma 4 31B |
 | `complex` | reasoning, coding, long documents | Gemini 2.5 Pro, Nemotron 3 Ultra, Inkling, Laguna S 2.1, Cohere Command A |
 
+### Paid fallback when free quota runs out
+
+Free deployments carry `input_cost_per_token: 0` / `output_cost_per_token: 0`, so they never count
+against budgets. Router fallbacks: `lite → base → lite-paid`, `base → lite → complex → base-paid`,
+`complex → base → complex-paid`. The paid groups also fall back to each other.
+
+| Group | Deployments |
+|---|---|
+| `lite-paid` | `bedrock/apac.amazon.nova-lite-v1:0`, `openrouter/qwen/qwen3.7-flash` |
+| `base-paid` | `bedrock/apac.amazon.nova-pro-v1:0`, `bedrock/deepseek.v3.2`, `openrouter/deepseek/deepseek-v4.1-flash` |
+| `complex-paid` | `bedrock/qwen.qwen3-coder-480b-a35b-v1:0`, `bedrock/in.moonshotai.kimi-k3`, `openrouter/qwen/qwen3.7-plus` |
+
+- A key's `models` list (e.g. `lite,base`) does **not** block these fallbacks, and the paid cost is charged
+  to that key's budget.
+- **Tested on 2026-10-23** with a key restricted to `lite,base` and a $0.05 budget. Requesting `base`
+  (free providers had no keys yet) returned HTTP 200 from `apac.amazon.nova-lite-v1:0` via group
+  `lite-paid`, with `x-litellm-attempted-fallbacks: 1`. It used 13 + 2 tokens, cost $0.000001323, and
+  `/key/info` showed spend 0.000001323.
+- Response headers that help when debugging: `x-litellm-model-group`, `x-litellm-attempted-fallbacks`,
+  `x-litellm-response-cost`.
+
 ### Response cache
 
 `litellm_settings.cache` in `app/config.yaml` stores responses in the Redis container for 1 hour
