@@ -29,3 +29,6 @@ keys/
 # Python virtualenvs (examples)
 .venv/
 __pycache__/
+
+# Claude Code local (per-machine) settings
+.claude/settings.local.json
