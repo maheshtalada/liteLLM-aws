@@ -99,16 +99,62 @@ curl -s $OPENAI_BASE_URL/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | 
 | `complex` | `bedrock-complex` (Claude Opus 4.5, Qwen3 Coder 480B, Kimi K3) | reasoning, coding, long documents |
 | | `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` | that exact Claude model |
 
-Free models right now:
+### Free models by tier
 
-| Tier | Models (Gemini · Groq · Z.AI GLM · OpenRouter `:free`) |
+Status as of 2026-10-24: 17 free models from 4 providers, all priced at $0. Students ask for the tier
+name, never a specific model; LiteLLM picks a healthy model in that tier at random.
+
+**`lite`** — quick, simple tasks (classification, extraction, short answers)
+
+| Model | Provider | Model ID in `app/config.yaml` |
+|---|---|---|
+| Gemini 3.5 Flash-Lite | Google | `gemini/gemini-3.5-flash-lite` |
+| Gemini 3.1 Flash-Lite | Google | `gemini/gemini-3.1-flash-lite` |
+| gpt-oss-20b | Groq | `groq/openai/gpt-oss-20b` |
+| GLM-4.5-Flash | Z.AI (Zhipu) | `zai/glm-4.5-flash` |
+| Nemotron 3.5 Lightning | OpenRouter (NVIDIA) | `openrouter/nvidia/nemotron-3.5-lightning:free` |
+
+**`base`** — general chat and writing (the default choice)
+
+| Model | Provider | Model ID in `app/config.yaml` |
+|---|---|---|
+| Gemini 3.6 Flash | Google | `gemini/gemini-3.6-flash` |
+| Gemini 3.5 Flash | Google | `gemini/gemini-3.5-flash` |
+| gpt-oss-120b | Groq | `groq/openai/gpt-oss-120b` |
+| Qwen 3.8 27B | Groq (Alibaba) | `groq/qwen/qwen3.8-27b` |
+| GLM-4.7-Flash | Z.AI (Zhipu) | `zai/glm-4.7-flash` |
+| Gemma 4 31B | OpenRouter (Google) | `openrouter/google/gemma-4-31b-it:free` |
+| Gemma 4 26B | OpenRouter (Google) | `openrouter/google/gemma-4-26b-a4b-it:free` |
+
+**`complex`** — reasoning, coding, long documents
+
+| Model | Provider | Model ID in `app/config.yaml` |
+|---|---|---|
+| Gemini 3.6 Flash | Google | `gemini/gemini-3.6-flash` |
+| Gemini 3 Flash Preview | Google | `gemini/gemini-3-flash-preview` |
+| Nemotron 3 Ultra 550B (reasoning) | OpenRouter (NVIDIA) | `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` |
+| Laguna S 2.1 (coding, reasoning) | OpenRouter (Poolside) | `openrouter/poolside/laguna-s-2.1:free` |
+| North Mini Code (coding) | OpenRouter (Cohere) | `openrouter/cohere/north-mini-code:free` |
+
+**Free-tier limits.** These are shared by all students, because there's one provider key each:
+
+| Provider | Free limit (approximate; providers change these) |
 |---|---|
-| `lite` | Gemini 3.5 Flash-Lite, Gemini 3.1 Flash-Lite · gpt-oss-20b · GLM-4.5-Flash · Nemotron 3.5 Lightning |
-| `base` | Gemini 3.6 Flash, Gemini 3.5 Flash · gpt-oss-120b, Qwen 3.8 27B · GLM-4.7-Flash · Gemma 4 31B, Gemma 4 26B |
-| `complex` | Gemini 3.6 Flash, Gemini 3 Flash Preview · Nemotron 3 Ultra 550B, Laguna S 2.1, North Mini Code |
+| Google Gemini | Per-project daily and per-minute limits; see [AI Studio → Rate limits](https://aistudio.google.com/rate-limit). Popular models sometimes return `503 high demand`. |
+| Groq | Per model: 30 requests/min, 1,000 requests/day, 8,000 tokens/min |
+| Z.AI (GLM) | Flash models are free; they sometimes return "temporarily overloaded" |
+| OpenRouter `:free` | About 20 requests/min. About 50 requests/day in total, or about 1,000/day once $10+ of credit has been bought. |
 
-Each name spreads requests across its models and skips any that are busy. Some `complex` models are
-reasoning models, so don't set a tiny `max_tokens` with `complex` (they can spend it all on thinking).
+When a model is busy or out of quota, LiteLLM skips it for 60 s and uses the others in the tier. If a
+whole tier is exhausted, the request goes to the paid fallback (see
+[Limits and 429 errors](#limits-and-429-errors)). Some `complex` models are reasoning models, so don't
+set a tiny `max_tokens` with `complex` (they can spend it all on thinking).
+
+**Not used** (tested 2026-10-23/24): Gemini 3.8/3.7 Flash (hang for more than 60 s); Gemini 2.5 Pro/2.5
+Flash ("no longer available to new users"); Gemini Pro Latest (not free); OpenRouter Nemotron 3 Super
+(404), Inkling (agent apps only) and MiniMax M3.1 Flash (removed). The Cohere provider (Command A) is
+off until `COHERE_API_KEY` is added. Free model lists change often; recheck with
+`curl -s $URL/health?model=base -H "Authorization: Bearer $MASTER"`.
 
 - **Free models:** shared by everyone and may use prompts for training, so don't send confidential data.
 - **Bedrock models:** cost money per token, but your data stays within AWS. They are used **only** when a
@@ -147,6 +193,39 @@ Students never wait for tomorrow's quota. When every free model in a tier is exh
 answered by the matching paid group. The student keeps asking for `lite` / `base` / `complex` and
 doesn't notice the switch:
 
+#### How a request is routed
+
+```mermaid
+flowchart TD
+    R["Student request<br/>model = base, student key sk-…"] --> K{"Key check<br/>model allowed? under budget?<br/>under rpm/tpm? not expired?"}
+    K -- no --> X1["Error to student<br/>401 / 429 / Budget exceeded"]
+    K -- yes --> C{"Same request in the<br/>last hour? (Redis cache)"}
+    C -- yes --> CH["Cached answer · $0"]
+    C -- no --> F1["① Free models in <b>base</b><br/>Gemini · Groq · GLM · OpenRouter :free<br/>random pick, 2 retries"]
+    F1 -- answered --> OK1["Answer · $0"]
+    F1 -- "429 / 503 / error<br/>(failing model parked 60 s)" --> F2["② Other free tiers<br/>base → lite → complex"]
+    F2 -- answered --> OK2["Answer · $0"]
+    F2 -- all free exhausted --> P["③ Paid fallback <b>base-paid</b><br/>Bedrock Nova Pro, DeepSeek V3.2<br/>OpenRouter DeepSeek V4.1 Flash"]
+    P -- answered --> OK3["Answer · real cost<br/>charged to the student's budget"]
+    P -- "budget used up" --> X2["Budget exceeded<br/>until the budget resets"]
+```
+
+The same pattern applies to every tier. These are the exact fallback chains in `app/config.yaml`; a
+fallback tier can in turn use its own fallbacks:
+
+| Student asks for | ① Free (same tier) | ② Other free tiers | ③ Paid upgrade | Paid groups fall back to |
+|---|---|---|---|---|
+| `lite` | 5 lite models | `base` | `lite-paid` | `lite-paid → base-paid` |
+| `base` | 7 base models | `lite`, then `complex` | `base-paid` | `base-paid → lite-paid` |
+| `complex` | 5 complex models | `base` | `complex-paid` | `complex-paid → base-paid` |
+
+- **Only step ③ costs money**, and it is charged to that student's key budget (free models count as $0).
+- **Paid models on request** (`bedrock-*`, `claude-*`) are separate. Free tiers never fall back to them.
+- **To check what happened to a request:** the response headers `x-litellm-model-group` (e.g.
+  `base-paid`), `x-litellm-attempted-fallbacks` and `x-litellm-response-cost`, or UI → **Logs**.
+
+#### Paid groups
+
 | Free tier | Paid fallback | Models (billed) |
 |---|---|---|
 | `lite` | `lite-paid` | Amazon Nova Lite (Bedrock), Qwen 3.7 Flash (OpenRouter) |
@@ -162,7 +241,8 @@ doesn't notice the switch:
   without it, the Bedrock models in each group answer.
 - **Typical cost:** a short chat turn on Nova Lite costs about $0.000001. The 2026-10-23 test (13 input
   + 2 output tokens) cost **$0.0000013**.
-- **Until free provider keys are stored, every request uses the paid fallback.** Add `GEMINI_API_KEY` etc. first.
+- **Free provider keys are stored** (Gemini, Groq, OpenRouter, Z.AI), so paid fallback only happens when free
+  quotas run out. Without any free keys, every request would go straight to step ③.
 
 **Response cache (on):** identical requests within 1 hour are answered from Redis without calling the
 provider, which saves quota and money when a class runs the same exercise. Cached answers come back in
