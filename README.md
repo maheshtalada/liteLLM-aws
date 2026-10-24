@@ -86,6 +86,20 @@ r = client.chat.completions.create(model="base", messages=[{"role": "user", "con
 print(r.choices[0].message.content)
 ```
 
+**Anthropic SDK / Messages API (`/v1/messages`)** also works with the same key, for code or tools built on
+Anthropic's format. Use gateway model names (`base`, `lite`…), not Claude model IDs. Tested on 2026-10-24
+with a student key: chat and streaming both work.
+
+```python
+from anthropic import Anthropic
+client = Anthropic(base_url="https://3-111-59-142.sslip.io", api_key="sk-...their own key...")
+msg = client.messages.create(model="base", max_tokens=200, messages=[{"role": "user", "content": "Hello"}])
+print(msg.content[0].text)
+```
+
+Claude-only features (Anthropic prompt caching, extended thinking) don't apply to the free non-Claude models
+behind these names; basic chat, system prompts, streaming and tool use are translated.
+
 List the models a key may use (opening the URL in a browser gives `401`, because a browser can't send the key):
 
 ```bash
@@ -267,7 +281,10 @@ about 0.2 s. To skip the cache for one request (e.g. to get a fresh random answe
 client.chat.completions.create(model="base", messages=[...], extra_body={"cache": {"no-cache": True}})
 ```
 
-Where to look: UI → **Logs** (which model or provider failed) and **Usage** (who used what).
+Where to look: UI → **Logs** (which model or provider failed) and **Usage** (who used what). For step-by-step
+**traces** inside apps (retrieved chunks, prompts, tool calls), add Langfuse or LangSmith. LiteLLM can send
+every request to Langfuse with a gateway setting, so student apps need no code changes. Bedrock's CloudWatch
+metrics only cover Bedrock calls and aren't per student.
 
 ---
 

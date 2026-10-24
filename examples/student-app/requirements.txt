@@ -1,1 +1,2 @@
 openai>=1.40
+pypdf>=4.0          # only needed to index .pdf files

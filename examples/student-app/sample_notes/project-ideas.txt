@@ -1,0 +1,6 @@
+Project ideas for the course
+
+1. A study buddy that answers questions about your lecture notes using RAG and cites the source.
+2. A meeting-notes extractor that turns free text into structured JSON with dates and action items.
+3. A support bot for a small shop that uses tool calling to check order status and opening hours.
+4. A sentiment dashboard that classifies customer reviews with the lite model.
