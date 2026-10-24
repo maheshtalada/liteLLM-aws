@@ -45,7 +45,7 @@ browser, then run it again and pick **Console Dot Dream**.
 | Check it's up | `curl -s $URL/health/liveliness` (prints `"I'm alive!"`) |
 | Add or change a provider key | `./set-secret.sh GEMINI_API_KEY`, then `./reload.sh --no-apply` |
 | Give someone a key | `./new-key.sh priya@example.com students 5` (email, team, USD budget) |
-| Give a whole class keys | `./new-key.sh --team students --file students.xlsx --models lite,base --budget 1 --budget-duration 30d` (see [below](#keys-for-a-class-or-team)) |
+| Give students keys | `./add-students.sh class-a students.xlsx` (or an email, a list, a Google Sheet; see [below](#keys-for-a-class-or-team)) |
 | Change models | Edit `app/config.yaml`, then `./reload.sh` |
 | Restart LiteLLM | `./reload.sh --no-apply` |
 | See logs | `aws logs tail /litellm/litellm --follow` |
@@ -289,7 +289,28 @@ curl -s "$URL/team/info?team_id=students" -H "Authorization: Bearer $MASTER" | j
 
 ## Keys for a class or team
 
-Create everyone's keys in one command, from a list, a CSV or Excel file, or a Google Sheet:
+The short way, `add-students.sh`, signs you in, checks the account and applies the standard student
+policy automatically:
+
+```bash
+./add-students.sh test-team test.student@example.com                 # one student
+./add-students.sh class-a "priya@college.edu, arjun@college.edu"     # a list
+./add-students.sh class-a students.xlsx                              # CSV or Excel file
+./add-students.sh class-a "https://docs.google.com/spreadsheets/d/<id>/edit#gid=0"   # Google Sheet
+./add-students.sh class-a students.xlsx --dry-run                    # preview only
+./add-students.sh class-a students.xlsx --budget 2                   # override one setting for this run
+```
+
+**Student policy** (defined once at the top of `add-students.sh`; edit it there to change it for everyone):
+
+| Setting | Default |
+|---|---|
+| Models | `lite,base` (no `complex`, no paid `bedrock-*` / `claude-*`) |
+| Budget | $1 of **paid fallback** per student, refilled every 30 days (free usage is $0) |
+| Rate limit | 10 requests per minute |
+| Expiry | 90 days |
+
+The full form, with every option, is `new-key.sh`:
 
 ```bash
 ./new-key.sh --team students --emails "priya@college.edu, arjun@college.edu" --models lite,base --budget 1 --budget-duration 30d --rpm 10 --expires 90d
@@ -448,6 +469,7 @@ Daily disk snapshots are kept after a destroy; delete them as shown in [docs/ref
 | `host/` | Scripts that run on the server at boot |
 | `login.sh` | `source ./login.sh`: sign in, check the account, set `$ID` and `$URL` |
 | `set-secret.sh` · `reload.sh` | Store a provider key · apply config and restart LiteLLM |
-| `new-key.sh` | Create user keys: one person, or a class from a list / CSV / Excel / Google Sheet |
+| `add-students.sh` | `./add-students.sh <team> <emails or file or sheet>`: student keys with the standard policy |
+| `new-key.sh` | Create user keys with any options: one person, or a class from a list / CSV / Excel / Google Sheet |
 | `keys/` | Generated student key files (git-ignored; delete after sending) |
 | `docs/reference.md` | Full reference |

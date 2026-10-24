@@ -16,6 +16,7 @@ Short guide: README.md. Full runbook (every command, console map, troubleshootin
 - `set-secret.sh` — store a provider key (prompted, hidden). `reload.sh` — apply + restart via SSM.
 - Free models are priced $0 in config; free tiers fall back to *-paid groups (Bedrock + OpenRouter) when quota runs out,
   charged to the key budget (budget = real paid spend).
+- `add-students.sh <team> <emails|file|sheet-url>` — short wrapper over new-key.sh with the student policy (lite,base · $1/30d · rpm 10 · 90d).
 - `new-key.sh` — per-user virtual keys (one, or batch via --emails / --file csv|xlsx / --sheet <public Google Sheet> with --models/--budget/--rpm/--expires;
   batch writes keys to git-ignored keys/, never prints them). The user runs it; single mode prints the
   new key once, so don't run it yourself and capture the key in chat.
