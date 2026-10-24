@@ -6,7 +6,7 @@ Each person gets their own key; usage is tracked per person.
 | | |
 |---|---|
 | **URL** | `https://3-111-59-142.sslip.io` (admin UI: `/ui`) |
-| **Models** | Free (Gemini, Groq, OpenRouter, GLM): `lite`, `base`, `complex` (with automatic paid fallback when free quota runs out) · Paid on request (Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
+| **Models** | Free (Gemini, Groq, OpenRouter, GLM): `lite`, `base`, `complex`, embeddings `embed` (with automatic paid fallback when free quota runs out) · Paid on request (Bedrock): `bedrock-lite`, `bedrock-base`, `bedrock-complex`, `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-5` |
 | **Server** | EC2 `t4g.small` in `ap-south-1`, account **985040258825** (Console Dot Dream) |
 | **Cost** | about $18–20/month for the server; free models cost $0, Bedrock models are billed per token |
 
@@ -126,15 +126,26 @@ name, never a specific model; LiteLLM picks a healthy model in that tier at rand
 | Gemma 4 31B | OpenRouter (Google) | `openrouter/google/gemma-4-31b-it:free` |
 | Gemma 4 26B | OpenRouter (Google) | `openrouter/google/gemma-4-26b-a4b-it:free` |
 
-**`complex`** — reasoning, coding, long documents
+**`complex`** — reasoning, long documents, tool calling (general-purpose; chosen for building LLM apps, not coding)
 
 | Model | Provider | Model ID in `app/config.yaml` |
 |---|---|---|
 | Gemini 3.6 Flash | Google | `gemini/gemini-3.6-flash` |
 | Gemini 3 Flash Preview | Google | `gemini/gemini-3-flash-preview` |
 | Nemotron 3 Ultra 550B (reasoning) | OpenRouter (NVIDIA) | `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` |
-| Laguna S 2.1 (coding, reasoning) | OpenRouter (Poolside) | `openrouter/poolside/laguna-s-2.1:free` |
-| North Mini Code (coding) | OpenRouter (Cohere) | `openrouter/cohere/north-mini-code:free` |
+| gpt-oss-120b (reasoning, tool calling) | Groq | `groq/openai/gpt-oss-120b` |
+| GLM-4.7-Flash | Z.AI (Zhipu) | `zai/glm-4.7-flash` |
+
+**Embeddings** — for RAG and semantic search (one model per name, **no fallback**)
+
+| Name | Model | Cost | Dimensions |
+|---|---|---|---|
+| `embed` | Gemini Embedding 001 | free | 3072 |
+| `embed-bedrock` | Amazon Titan Text Embeddings v2 (Bedrock, Mumbai) | paid, ~$0.02 per 1M tokens | 1024 |
+
+Use the **same** embedding name for indexing and for searching. Vectors from different models can't be
+compared, which is why embeddings never fall back to another model. A working example is in
+[examples/student-app](examples/student-app).
 
 **Free-tier limits.** These are shared by all students, because there's one provider key each:
 
@@ -230,15 +241,19 @@ fallback tier can in turn use its own fallbacks:
 |---|---|---|
 | `lite` | `lite-paid` | Amazon Nova Lite (Bedrock), Qwen 3.7 Flash (OpenRouter) |
 | `base` | `base-paid` | Nova Pro, DeepSeek V3.2 (Bedrock), DeepSeek V4.1 Flash (OpenRouter) |
-| `complex` | `complex-paid` | Qwen3 Coder 480B, Kimi K3 (Bedrock), Qwen 3.7 Plus (OpenRouter) |
+| `complex` | `complex-paid` | DeepSeek V3.2, Nova Pro (Bedrock), Qwen 3.7 Plus (OpenRouter) |
 
 - **Free usage costs $0 and never counts against budgets.** A key's `--budget` therefore measures **real
   paid spend only**.
 - **Cap per student:** create keys with e.g. `--budget 1 --budget-duration 30d` ($1 of paid fallback per
   student per month). The class total is automatically students × $1. When a student's budget is used
   up, they get `Budget has been exceeded` until it resets; free models keep working once their quota is back.
-- **Billing:** Bedrock goes on your AWS bill. OpenRouter models need credit on your OpenRouter account;
-  without it, the Bedrock models in each group answer.
+- **Order: Bedrock first, OpenRouter as backup.** Each paid group sets `order: 1` on its Bedrock models
+  (paid from your AWS credits) and `order: 2` on OpenRouter. Verified on 2026-10-24: 10 of 10
+  `complex-paid` requests were served by Bedrock. When the AWS credits run out, buy OpenRouter credit and
+  swap the `order` values (OpenRouter is 2–4× cheaper per token).
+- **Billing:** Bedrock goes on your AWS bill. OpenRouter needs credit on your OpenRouter account (it has $0
+  right now, so `:free` models are limited to about 50 requests/day).
 - **Typical cost:** a short chat turn on Nova Lite costs about $0.000001. The 2026-10-23 test (13 input
   + 2 output tokens) cost **$0.0000013**.
 - **Free provider keys are stored** (Gemini, Groq, OpenRouter, Z.AI), so paid fallback only happens when free
@@ -305,7 +320,7 @@ policy automatically:
 
 | Setting | Default |
 |---|---|
-| Models | `lite,base` (no `complex`, no paid `bedrock-*` / `claude-*`) |
+| Models | `lite,base,embed` (chat + free embeddings for RAG; no `complex`, no paid `bedrock-*` / `claude-*`) |
 | Budget | $1 of **paid fallback** per student, refilled every 30 days (free usage is $0) |
 | Rate limit | 10 requests per minute |
 | Expiry | 90 days |
@@ -472,4 +487,5 @@ Daily disk snapshots are kept after a destroy; delete them as shown in [docs/ref
 | `add-students.sh` | `./add-students.sh <team> <emails or file or sheet>`: student keys with the standard policy |
 | `new-key.sh` | Create user keys with any options: one person, or a class from a list / CSV / Excel / Google Sheet |
 | `keys/` | Generated student key files (git-ignored; delete after sending) |
+| `examples/student-app/` | Example Python LLM app (chat + RAG) using a student key |
 | `docs/reference.md` | Full reference |

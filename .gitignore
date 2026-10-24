@@ -25,3 +25,7 @@ override.tf.json
 
 # Generated per-user keys (new-key.sh batch mode)
 keys/
+
+# Python virtualenvs (examples)
+.venv/
+__pycache__/

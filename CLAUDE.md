@@ -56,6 +56,8 @@ Short guide: README.md. Full runbook (every command, console map, troubleshootin
 - **Never** ask the user to paste API keys into the chat — they use `./set-secret.sh` in their own terminal.
 - **Never** change or rotate `LITELLM_SALT_KEY` once the gateway is running.
 - Ask before `terraform apply`, `terraform destroy`, or any command that deletes resources.
+- `/health` and test requests on paid groups (`*-paid`, `bedrock-*`, `claude-*`, `embed-bedrock`) cost real money.
+  Health-check/test only the free tiers by default; check paid models only when the user asks, and state the cost first.
 - Don't use `latest` image tags. Don't open SSH (port 22); use SSM.
 - Don't set `allowed_cidrs` to `0.0.0.0/0` without the user explicitly asking.
 - Don't commit `terraform.tfvars`, `*.tfstate*`, or `.terraform/`.

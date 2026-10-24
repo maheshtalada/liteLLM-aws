@@ -149,15 +149,15 @@ model_list:
 
   - model_name: complex
     litellm_params:
-      model: openrouter/cohere/north-mini-code:free   # coding model
-      api_key: os.environ/OPENROUTER_API_KEY
+      model: groq/openai/gpt-oss-120b   # strong reasoning + tool calling
+      api_key: os.environ/GROQ_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
   - model_name: complex
     litellm_params:
-      model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
-      api_key: os.environ/OPENROUTER_API_KEY
+      model: zai/glm-4.7-flash
+      api_key: os.environ/ZAI_API_KEY
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
@@ -168,6 +168,25 @@ model_list:
   #     input_cost_per_token: 0          # free tier: never counts against budgets
   #     output_cost_per_token: 0
   #     rpm: 20
+
+  # ===================== Embeddings (for RAG / semantic search) =====================
+  # One model per name and NO fallback: vectors from different models aren't compatible, so a project must keep
+  # using the same name for indexing and searching.
+  - model_name: embed
+    litellm_params:
+      model: gemini/gemini-embedding-001       # free, 3072 dimensions
+      api_key: os.environ/GEMINI_API_KEY
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+    model_info:
+      mode: embedding
+
+  - model_name: embed-bedrock
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0   # paid (cheap), stays in Mumbai, 1024 dimensions
+      aws_region_name: os.environ/AWS_REGION_NAME
+    model_info:
+      mode: embedding
 
   # ====================== Amazon Bedrock (PAID) ======================
   # bedrock-lite
@@ -230,46 +249,55 @@ model_list:
       aws_region_name: os.environ/AWS_REGION_NAME
 
   # ============ Paid fallback for the free tiers (used only when free quota runs out) ============
-  # Same idea as lite/base/complex, but billed: Bedrock on the AWS bill, OpenRouter from its credits.
+  # Same idea as lite/base/complex, but billed. order 1 = Bedrock first (uses AWS credits); order 2 = OpenRouter
+  # backup (needs OpenRouter credit). When AWS credits run out, swap the order values.
   - model_name: lite-paid
     litellm_params:
       model: bedrock/apac.amazon.nova-lite-v1:0
       aws_region_name: os.environ/AWS_REGION_NAME
+      order: 1                         # 1 = tried first (Bedrock, paid from AWS credits)
 
   - model_name: lite-paid
     litellm_params:
       model: openrouter/qwen/qwen3.7-flash          # ~$0.03 / $0.13 per M tokens
       api_key: os.environ/OPENROUTER_API_KEY
+      order: 2                         # backup; needs OpenRouter credit
 
   - model_name: base-paid
     litellm_params:
       model: bedrock/apac.amazon.nova-pro-v1:0
       aws_region_name: os.environ/AWS_REGION_NAME
+      order: 1                         # 1 = tried first (Bedrock, paid from AWS credits)
 
   - model_name: base-paid
     litellm_params:
       model: bedrock/deepseek.v3.2
       aws_region_name: os.environ/AWS_REGION_NAME
+      order: 1                         # 1 = tried first (Bedrock, paid from AWS credits)
 
   - model_name: base-paid
     litellm_params:
       model: openrouter/deepseek/deepseek-v4.1-flash
       api_key: os.environ/OPENROUTER_API_KEY
+      order: 2                         # backup; needs OpenRouter credit
 
   - model_name: complex-paid
     litellm_params:
-      model: bedrock/qwen.qwen3-coder-480b-a35b-v1:0
+      model: bedrock/deepseek.v3.2
       aws_region_name: os.environ/AWS_REGION_NAME
+      order: 1                         # 1 = tried first (Bedrock, paid from AWS credits)
 
   - model_name: complex-paid
     litellm_params:
-      model: bedrock/in.moonshotai.kimi-k3
+      model: bedrock/apac.amazon.nova-pro-v1:0
       aws_region_name: os.environ/AWS_REGION_NAME
+      order: 1                         # 1 = tried first (Bedrock, paid from AWS credits)
 
   - model_name: complex-paid
     litellm_params:
       model: openrouter/qwen/qwen3.7-plus
       api_key: os.environ/OPENROUTER_API_KEY
+      order: 2                         # backup; needs OpenRouter credit
 
 router_settings:
   routing_strategy: simple-shuffle

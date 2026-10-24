@@ -14,7 +14,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # ---- Student policy (edit here to change it for everyone) ----
-MODELS="lite,base"        # tiers students may use (no paid bedrock-*/claude-*, no complex)
+MODELS="lite,base,embed"  # tiers students may use (+ free embeddings for RAG; no paid bedrock-*/claude-*, no complex)
 BUDGET="1"                # USD of PAID fallback per student (free models count as $0)
 BUDGET_RESET="30d"        # budget refills every 30 days
 RPM="10"                  # requests per minute per student

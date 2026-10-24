@@ -1,4 +1,5 @@
 
+
 # LiteLLM gateway — full reference
 
 Detailed reference for the gateway. For the short version, see the [README](../README.md).
@@ -286,6 +287,15 @@ against budgets. Router fallbacks: `lite → base → lite-paid`, `base → lite
   `/key/info` showed spend 0.000001323.
 - Response headers that help when debugging: `x-litellm-model-group`, `x-litellm-attempted-fallbacks`,
   `x-litellm-response-cost`.
+
+### Health checks cost money on paid models
+
+`GET /health?model=<name>` sends a small **real** request to every deployment in that group. On free tiers
+that costs $0; on paid groups (`*-paid`, `bedrock-*`, `claude-*`, `embed-bedrock`) the provider bills it like
+any request (about $0.00004 each). On 2026-10-24, manual checks of the paid groups cost about $0.002.
+Background health checks (`background_health_checks`) are **off**, so an idle gateway costs $0 in model
+fees. To verify paid models without paying, check the config, `aws bedrock list-foundation-models`, and the
+spend logs of real traffic (`/spend/logs?summarize=false`).
 
 ### Response cache
 
