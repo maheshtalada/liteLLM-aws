@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Nightly (systemd timer, 00:30 UTC): export each finished day of LiteLLM request logs to S3, then delete
+# log rows older than KEEP_DAYS from Postgres to free space.
+#   s3://<bundle bucket>/logs/YYYY-MM-DD.jsonl.gz   one JSON object per request (prompt, response, tokens, cost)
+# Your Mac downloads (and removes) them with ./download-logs.sh. Only days that were exported AND verified in
+# S3 are ever deleted from the database.
+set -euo pipefail
+
+# shellcheck disable=SC1091
+source /etc/litellm.conf                   # BUCKET, REGION
+KEEP_DAYS="${KEEP_DAYS:-3}"                # days of logs kept in the database (admin UI Logs page)
+STATE=/var/lib/litellm-logs/exported       # one marker file per exported day
+mkdir -p "$STATE"
+
+psql() { docker exec litellm-db psql -U litellm -d litellm -At -v ON_ERROR_STOP=1 -c "$1"; }
+
+# Every finished UTC day (before today) that still has rows in the database.
+DAYS=$(psql "SELECT DISTINCT to_char(\"startTime\" AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM \"LiteLLM_SpendLogs\"
+             WHERE \"startTime\" < date_trunc('day', now() AT TIME ZONE 'UTC') ORDER BY 1;")
+
+for DAY in $DAYS; do
+  [ -f "$STATE/$DAY" ] && continue
+  TMP=$(mktemp)
+  psql "SELECT row_to_json(t) FROM \"LiteLLM_SpendLogs\" t
+        WHERE \"startTime\" >= '$DAY'::date AND \"startTime\" < '$DAY'::date + 1 ORDER BY \"startTime\";" \
+    | gzip -9 > "$TMP"
+  ROWS=$(gzip -dc "$TMP" | grep -c . || true)
+  aws s3 cp "$TMP" "s3://$BUCKET/logs/$DAY.jsonl.gz" --region "$REGION" --only-show-errors \
+    --metadata "rows=$ROWS"
+  aws s3api head-object --bucket "$BUCKET" --key "logs/$DAY.jsonl.gz" --region "$REGION" >/dev/null
+  echo "$ROWS" > "$STATE/$DAY"
+  rm -f "$TMP"
+  echo "exported $DAY: $ROWS requests -> s3://$BUCKET/logs/$DAY.jsonl.gz"
+done
+
+# Delete only days older than KEEP_DAYS that have an export marker.
+CUTOFF=$(date -u -d "-$KEEP_DAYS days" +%Y-%m-%d)
+for MARK in "$STATE"/*; do
+  [ -e "$MARK" ] || continue
+  DAY=$(basename "$MARK")
+  [[ "$DAY" < "$CUTOFF" ]] || continue
+  N=$(psql "DELETE FROM \"LiteLLM_SpendLogs\" WHERE \"startTime\" >= '$DAY'::date AND \"startTime\" < '$DAY'::date + 1;" \
+      | grep -oE '[0-9]+$' || echo 0)
+  [ "$N" = "0" ] || echo "deleted $DAY from database: $N rows (kept in export)"
+done
+psql "VACUUM \"LiteLLM_SpendLogs\";" >/dev/null   # make freed space reusable
+echo "done (keeping $KEEP_DAYS days in the database)"

@@ -169,6 +169,14 @@ resource "aws_s3_object" "launcher" {
   etag   = filemd5("${path.module}/../host/litellm-up")
 }
 
+# Nightly log export (installed as a systemd timer by litellm-up).
+resource "aws_s3_object" "logs_export" {
+  bucket = aws_s3_bucket.bundle.id
+  key    = "bin/litellm-logs-export"
+  source = "${path.module}/../host/litellm-logs-export"
+  etag   = filemd5("${path.module}/../host/litellm-logs-export")
+}
+
 # Non-secret runtime settings read by litellm-up.
 resource "aws_s3_object" "bootstrap_env" {
   bucket = aws_s3_bucket.bundle.id
@@ -184,6 +192,8 @@ resource "aws_s3_object" "bootstrap_env" {
     "LOG_REGION=${var.region}",
     "PUBLIC_HTTPS=${local.caddy_enabled}",
     "PUBLIC_HOSTNAME=${var.public_hostname}",
+    "LOG_EXPORT=${var.log_export_enabled}",
+    "LOG_KEEP_DAYS=${var.log_keep_days}",
     "",
   ])
 }
@@ -254,6 +264,12 @@ data "aws_iam_policy_document" "instance" {
     sid       = "Bundle"
     actions   = ["s3:GetObject", "s3:ListBucket"]
     resources = [aws_s3_bucket.bundle.arn, "${aws_s3_bucket.bundle.arn}/*"]
+  }
+
+  statement {
+    sid       = "LogExports"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.bundle.arn}/logs/*"]
   }
 
   statement {

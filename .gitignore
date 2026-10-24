@@ -32,3 +32,6 @@ __pycache__/
 
 # Claude Code local (per-machine) settings
 .claude/settings.local.json
+
+# Downloaded request logs (contain prompts)
+logs/

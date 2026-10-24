@@ -40,3 +40,7 @@ budget_alert_email = ""
 # Empty public_hostname = <public-ip-with-dashes>.sslip.io (no domain needed).
 public_https    = false
 public_hostname = ""
+
+# Nightly request-log export to S3 (download with ./download-logs.sh) + keep only N days in the database.
+log_export_enabled = false
+log_keep_days      = 3

@@ -13,6 +13,7 @@ Short guide: README.md. Full runbook (every command, console map, troubleshootin
 - `host/user-data.sh.tftpl` — first-boot install (Docker, Compose, systemd unit)
 - `host/litellm-up` — runs on every boot / reload: S3 sync → render .env from Secrets Manager → compose up
 - `login.sh` — `source ./login.sh`: aws login if expired, refuse any account but 985040258825, export creds/AWS_REGION/ID/URL.
+- `download-logs.sh` — pull nightly request-log exports (incl. prompts) from S3 to git-ignored logs/ and delete them from S3. Export on/off: `log_export_enabled` / `log_keep_days` in tfvars.
 - `set-secret.sh` — store a provider key (prompted, hidden). `reload.sh` — apply + restart via SSM.
 - Free models are priced $0 in config; free tiers fall back to *-paid groups (Bedrock + OpenRouter) when quota runs out,
   charged to the key budget (budget = real paid spend).

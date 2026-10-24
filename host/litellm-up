@@ -55,4 +55,37 @@ docker compose up -d --remove-orphans
 # config.yaml is bind-mounted; recreate LiteLLM so config and secret changes take effect.
 docker compose up -d --no-deps --force-recreate litellm
 
+# Nightly log export to S3 + database cleanup — on/off with log_export_enabled in terraform.tfvars.
+if [ "${LOG_EXPORT:-false}" = "true" ]; then
+  aws s3 cp "s3://$BUCKET/bin/litellm-logs-export" /usr/local/bin/.litellm-logs-export.new --region "$REGION" --only-show-errors \
+    && chmod 755 /usr/local/bin/.litellm-logs-export.new && mv -f /usr/local/bin/.litellm-logs-export.new /usr/local/bin/litellm-logs-export
+  cat > /etc/systemd/system/litellm-logs-export.service <<UNIT
+[Unit]
+Description=Export LiteLLM request logs to S3 and prune old rows
+After=litellm.service
+
+[Service]
+Type=oneshot
+Environment=KEEP_DAYS=${LOG_KEEP_DAYS:-3}
+ExecStart=/usr/local/bin/litellm-logs-export
+UNIT
+  cat > /etc/systemd/system/litellm-logs-export.timer <<'UNIT'
+[Unit]
+Description=Nightly LiteLLM log export
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now litellm-logs-export.timer >/dev/null 2>&1 || true
+  echo "Log export: ON (nightly 00:30 UTC, keeping ${LOG_KEEP_DAYS:-3} days in the database)"
+else
+  systemctl disable --now litellm-logs-export.timer >/dev/null 2>&1 || true
+  echo "Log export: OFF"
+fi
+
 echo "LiteLLM $LITELLM_TAG started"

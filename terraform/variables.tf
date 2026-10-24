@@ -156,3 +156,16 @@ variable "public_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+# ---------- Request-log export ----------
+variable "log_export_enabled" {
+  description = "Nightly export of request logs (incl. prompts) to S3 + delete DB rows older than log_keep_days. Download with ./download-logs.sh."
+  type        = bool
+  default     = false
+}
+
+variable "log_keep_days" {
+  description = "Days of request logs kept in the database (admin UI Logs page) when log export is enabled."
+  type        = number
+  default     = 3
+}

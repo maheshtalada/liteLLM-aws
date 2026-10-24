@@ -319,6 +319,39 @@ curl -s "$URL/team/info?team_id=students" -H "Authorization: Bearer $MASTER" | j
 
 ---
 
+## Request logs: prompts, daily export and download
+
+**Prompts and responses are stored** (`store_prompts_in_spend_logs: true` in `app/config.yaml`, on since
+2026-10-24). Admin UI → **Logs** → click a request to see the student, the model it asked for, the model
+that served it, the prompt, the response, tokens and cost. Students' text lives in the gateway database,
+so tell students (and don't send confidential data).
+
+**Daily export, keeping the database small** (switch in `terraform/terraform.tfvars`, then `./reload.sh`):
+
+```hcl
+log_export_enabled = false  # true = nightly export + cleanup; false = off (currently off)
+log_keep_days      = 3      # days of request logs kept in the database / admin UI
+```
+
+- Every night at 00:30 UTC the server exports each finished day to
+  `s3://<bucket>/logs/YYYY-MM-DD.jsonl.gz` (one JSON line per request), checks the upload, then deletes
+  database rows older than `log_keep_days`, **only for days already exported**. Budgets and spend totals
+  are stored separately and are not affected.
+- It runs for a few seconds on the server you already pay for, so there's no extra compute cost; S3 costs
+  a fraction of a cent.
+
+**Download to your Mac** (moves the files out of S3, saved readable only by you; `logs/` is git-ignored):
+
+```bash
+./download-logs.sh
+gzip -dc logs/2026-10-24.jsonl.gz | jq -r '[.startTime, .metadata.user_api_key_alias, .model, .spend] | @tsv'   # who / which model / cost
+gzip -dc logs/2026-10-24.jsonl.gz | jq -r '.proxy_server_request.messages[-1].content'                        # the prompts
+```
+
+Tested on 2026-10-24: exported 21 Oct (7 requests) and 23 Oct (35 requests), downloaded both, S3 emptied.
+
+---
+
 ## Keys for a class or team
 
 The short way, `add-students.sh`, signs you in, checks the account and applies the standard student
@@ -504,5 +537,7 @@ Daily disk snapshots are kept after a destroy; delete them as shown in [docs/ref
 | `add-students.sh` | `./add-students.sh <team> <emails or file or sheet>`: student keys with the standard policy |
 | `new-key.sh` | Create user keys with any options: one person, or a class from a list / CSV / Excel / Google Sheet |
 | `keys/` | Generated student key files (git-ignored; delete after sending) |
+| `download-logs.sh` | Download the daily request-log exports from S3 to `logs/` (git-ignored) and remove them from S3 |
+| `host/litellm-logs-export` | Runs on the server nightly: export finished days to S3, prune the database (switch: `log_export_enabled`) |
 | `examples/student-app/` | Example Python LLM app (chat + RAG) using a student key |
 | `docs/reference.md` | Full reference |
