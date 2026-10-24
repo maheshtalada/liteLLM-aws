@@ -75,91 +75,91 @@ model_list:
       input_cost_per_token: 0          # free tier: never counts against budgets
       output_cost_per_token: 0
 
-  # ===== Other free providers — disabled until their keys are stored (./set-secret.sh <NAME>) =====
+  # ===== Other free providers (Groq, OpenRouter, Z.AI enabled 2026-10-24; Cohere still needs a key) =====
   # To re-enable: uncomment the block(s), then ./reload.sh
-  # - model_name: lite
-  #   litellm_params:
-  #     model: groq/openai/gpt-oss-20b
-  #     api_key: os.environ/GROQ_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
-  #     rpm: 30
+  - model_name: lite
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
+      rpm: 30
 
-  # - model_name: lite
-  #   litellm_params:
-  #     model: zai/glm-4.5-flash                         # Zhipu (China)
-  #     api_key: os.environ/ZAI_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: lite
+    litellm_params:
+      model: zai/glm-4.5-flash                         # Zhipu (China)
+      api_key: os.environ/ZAI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
-  # - model_name: lite
-  #   litellm_params:
-  #     model: openrouter/nvidia/nemotron-3.5-lightning:free
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: lite
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3.5-lightning:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   # # ================================ base ==================================
 
-  # - model_name: base
-  #   litellm_params:
-  #     model: groq/openai/gpt-oss-120b
-  #     api_key: os.environ/GROQ_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
-  #     rpm: 30
+  - model_name: base
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
+      rpm: 30
 
-  # - model_name: base
-  #   litellm_params:
-  #     model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
-  #     api_key: os.environ/GROQ_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
-  #     rpm: 30
+  - model_name: base
+    litellm_params:
+      model: groq/qwen/qwen3.8-27b                     # Alibaba Qwen (China)
+      api_key: os.environ/GROQ_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
+      rpm: 30
 
-  # - model_name: base
-  #   litellm_params:
-  #     model: zai/glm-4.7-flash                         # Zhipu (China)
-  #     api_key: os.environ/ZAI_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: base
+    litellm_params:
+      model: zai/glm-4.7-flash                         # Zhipu (China)
+      api_key: os.environ/ZAI_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
-  # - model_name: base
-  #   litellm_params:
-  #     model: openrouter/minimax/minimax-m3.1-flash:free  # MiniMax (China)
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: base
+    litellm_params:
+      model: openrouter/google/gemma-4-26b-a4b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
-  # - model_name: base
-  #   litellm_params:
-  #     model: openrouter/google/gemma-4-31b-it:free
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: base
+    litellm_params:
+      model: openrouter/google/gemma-4-31b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   # # =============================== complex ================================
 
-  # - model_name: complex
-  #   litellm_params:
-  #     model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: complex
+    litellm_params:
+      model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
-  # - model_name: complex
-  #   litellm_params:
-  #     model: openrouter/thinkingmachines/inkling:free
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: complex
+    litellm_params:
+      model: openrouter/cohere/north-mini-code:free   # coding model
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
-  # - model_name: complex
-  #   litellm_params:
-  #     model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
-  #     api_key: os.environ/OPENROUTER_API_KEY
-  #     input_cost_per_token: 0          # free tier: never counts against budgets
-  #     output_cost_per_token: 0
+  - model_name: complex
+    litellm_params:
+      model: openrouter/poolside/laguna-s-2.1:free     # strong at coding
+      api_key: os.environ/OPENROUTER_API_KEY
+      input_cost_per_token: 0          # free tier: never counts against budgets
+      output_cost_per_token: 0
 
   # - model_name: complex
   #   litellm_params:
